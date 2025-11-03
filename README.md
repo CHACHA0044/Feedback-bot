@@ -73,6 +73,33 @@ FEEDBACK_OPTION=Always
 
 # Environment (keep as 'production')
 ENVIRONMENT=production
+
+Example env for CCAI B 3rd Yr students=
+# IUSMS Credentials
+ENROLLMENT_NO=your_enrollment_number
+PASSWORD=your_password
+
+# Theory subjects and teachers (comma-separated, must match in order)
+THEORY_SUBJECTS=CS304,CS301,CS303,CS340,CS391,CS395,CG301
+THEORY_TEACHERS=Mohammad Suaib,Tabassum,Roshan Jahan,Pervez Rauf,Saleyha Mariyam,Abhishek Pandey,Ayaz Mahmood
+
+# Lab subjects and teachers (can have 2 teachers per lab)
+LAB_SUBJECTS=CS310,CS302,CS393
+LAB_TEACHERS=Nida Khan,Shaba Irram,Saman Khan
+
+# Mentor details
+MENTOR_DEPT=Computer Science
+MENTOR_NAME=Tabassum
+
+# Teaching & Learning subjects and teachers
+TEACHING_SUBJECTS=CS304,CS301,CS303,CS340,CS391,CS395,CG301
+TEACHING_TEACHERS=Mohammad Suaib,Tabassum,Roshan Jahan,Pervez Rauf,Saleyha Mariyam,Abhishek Pandey,Ayaz Mahmood
+
+# Feedback option (Never/Rarely/Occasionally/Mostly/Always)
+FEEDBACK_OPTION=Always
+
+#Env keep 'production' only local testing depricated now
+ENVIRONMENT=production
 ```
 
 4. **Run the bot**
