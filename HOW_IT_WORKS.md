@@ -41,8 +41,6 @@ Here’s a quick breakdown of what happens behind the scenes 👇
 Want to see how it actually works?  
 👉 [**Watch the demo video here**](https://drive.google.com/file/d/1QPbRvdQBOpQpqxqFi3j-PFBMJTQZOuet/view?usp=sharing)  
 
-*(Click the link above to view the full walkthrough on Google Drive.)*    
-
 ---
 
 ## ⚠️ Note  

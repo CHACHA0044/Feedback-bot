@@ -90,7 +90,6 @@ npm start
 ⚠️ **Security Warning**: 
 - Never share your `.env` file with credentials
 - After using the bot, you can delete the repository from your computer
-- Change your password if you suspect any security breach
 
 ⚠️ **During Execution**:
 - Keep the browser window visible
@@ -110,6 +109,7 @@ npm start
 **Bot fails to login:**
 - Check your enrollment number and password
 - Ensure you have internet connection
+- Check for errors in logs
 
 **Subject/Teacher not found:**
 - Verify spelling in `.env` matches exactly with SMS portal
@@ -141,9 +141,9 @@ Let this bot do it for you in less than 5 minutes!
 This bot is for educational purposes. Users are responsible for:
 - Keeping their credentials secure
 - Using the bot responsibly
-- No info is stored to sent any where
+- No information is stored or sent anywhere
 - Everything runs locally
-- Bot dosen't checks your results/fees or anything just the feedback 
+- The bot doesn’t check your results, fees, or anything else — it only handles feedback forms
 - Refer to index.js for more info
 
 ## 🤝 Contributing
@@ -152,7 +152,7 @@ Found a bug? Have a suggestion? Open an issue or submit a pull request!
 
 ## 📄 License
 
-ISC License - Feel free to use and modify
+This project is licensed under the **GNU General Public License v3.0 (GPL-3.0)** — you are free to use, modify, and distribute this software under the same license terms.
 
 ---
 
