@@ -1,7 +1,9 @@
 # Feedback-bot
-# 🤖 IUL Feedback Automation Bot
+# 🤖 Feedback Automation Bot
 
 Tired of filling endless feedback forms? Let this bot do it for you automatically in less than 5 minutes!
+
+📘 **Refer to [this link](https://drive.google.com/file/d/1QPbRvdQBOpQpqxqFi3j-PFBMJTQZOuet/view?usp=sharing)** to get a detailed understanding of how the bot works.
 
 ## ✨ Features
 
@@ -10,8 +12,17 @@ Tired of filling endless feedback forms? Let this bot do it for you automaticall
 - ✅ Automated Mentor Feedback
 - ✅ Automated Teaching & Learning Feedback
 - ✅ Smart duplicate detection
+- ✅ Skips already filled forms
 - ✅ Detailed execution logs
 - ✅ Error handling and recovery
+
+## ⚠️ Limitations
+
+- ❌ Dependent on the current IUSMS feedback form structure — if element names, IDs, or layout change, the bot will stop working  
+- ❌ Works only for the subjects and teachers you provide — it won’t auto-detect new ones  
+- ❌ Limited to the supported feedback types (Theory, Lab, Mentor, Teaching & Learning)  
+- ❌ Requires a visible browser window and stable internet during execution
+
 
 ## 🚀 Quick Start
 
@@ -88,7 +99,7 @@ npm start
 
 ## 🎯 How It Works
 
-1. Bot logs into IUL SMS portal
+1. Bot logs into IUSMS portal
 2. Navigates to feedback sections
 3. Fills forms based on your `.env` configuration
 4. Automatically detects already submitted feedback
@@ -110,7 +121,7 @@ npm start
 
 ## 📊 Sample Output
 ```
-🤖 IUL FEEDBACK AUTOMATION BOT
+🤖 FEEDBACK AUTOMATION BOT
 Tired of filling feedback forms manually?
 Let this bot do it for you in less than 5 minutes!
 
@@ -130,7 +141,10 @@ Let this bot do it for you in less than 5 minutes!
 This bot is for educational purposes. Users are responsible for:
 - Keeping their credentials secure
 - Using the bot responsibly
-- Compliance with university policies
+- No info is stored to sent any where
+- Everything runs locally
+- Bot dosen't checks your results/fees or anything just the feedback 
+- Refer to index.js for more info
 
 ## 🤝 Contributing
 
@@ -142,4 +156,4 @@ ISC License - Feel free to use and modify
 
 ---
 
-Made with ❤️ for IUL students who value their time
+Made this because it started as a fun idea I was discussing with my friends.
