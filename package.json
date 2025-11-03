@@ -1,0 +1,17 @@
+{
+  "name": "feedback-bot",
+  "version": "1.0.0",
+  "description": "🤖 Automated IUSMS Feedback Bot - Fill your feedback forms in less than 5 minutes!",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["iul", "feedback", "automation", "puppeteer", "bot"],
+  "author": "CHACHA0044",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "puppeteer": "^24.27.0"
+  }
+}
