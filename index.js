@@ -547,10 +547,10 @@ async function dismissAlerts(page) {
     log.info(`📢 Alert: "${message}"`, 2);
     
     if (msgLower.includes('already submitted') || msgLower.includes('already given')) {
-      log.warning("⚠️ Feedback already submitted", 2);
-      await dialog.dismiss().catch(() => {});
+      log.warning("⚠️ Duplicate detected by server", 2);
+      await dialog.accept().catch(() => {});
     } else if (msgLower.includes('success') || msgLower.includes('submitted')) {
-      log.success("✅ Submission confirmed!", 2);
+      log.success("✅ Submission confirmed by server!", 2);
       await dialog.accept().catch(() => {});
     } else {
       await dialog.accept().catch(() => {});
@@ -590,7 +590,7 @@ async function handleNetworkErrors(page) {
   });
 }
 
-async function waitForSubmissionConfirmation(page, timeout = 8000) {
+async function waitForSubmissionConfirmation(page, timeout = 5000) {
   log.action("Waiting for server response...", 2);
 
   try {
@@ -598,28 +598,27 @@ async function waitForSubmissionConfirmation(page, timeout = 8000) {
     let dialogReceived = false;
     let dialogResult = null;
 
-    // Set up dialog handler
     const dialogHandler = async (dialog) => {
       dialogReceived = true;
       const msg = dialog.message();
       const msgLower = msg.toLowerCase();
       
-      log.info(`📢 Alert: "${msg}"`, 2);
+      log.info(`📢 Server Response: "${msg}"`, 2);
 
       if (msgLower.includes('already submitted') || msgLower.includes('already given')) {
-        log.warning("⚠️ Feedback already submitted", 2);
-        await dialog.dismiss().catch(() => {});
+        log.warning("⚠️ Duplicate detected", 2);
+        await dialog.accept().catch(() => {});
         dialogResult = 'duplicate';
       } else if (msgLower.includes('success') || msgLower.includes('submitted')) {
-        log.success("✅ Submission confirmed!", 2);
+        log.success("✅ ✅ SERVER CONFIRMED: Data submitted successfully!", 2);
         await dialog.accept().catch(() => {});
         dialogResult = 'success';
       } else if (msgLower.includes('error') || msgLower.includes('failed')) {
-        log.error(`Submission error: ${msg}`, 2);
-        await dialog.dismiss().catch(() => {});
+        log.error(`❌ Submission failed: ${msg}`, 2);
+        await dialog.accept().catch(() => {});
         dialogResult = 'error';
       } else {
-        log.warning(`Unknown alert: ${msg}`, 2);
+        log.warning(`⚠️ Unexpected response: ${msg}`, 2);
         await dialog.accept().catch(() => {});
         dialogResult = 'unknown';
       }
@@ -627,7 +626,7 @@ async function waitForSubmissionConfirmation(page, timeout = 8000) {
 
     page.once('dialog', dialogHandler);
 
-    // Wait for dialog with timeout
+    // Wait for dialog
     while (!dialogReceived && (Date.now() - startTime) < timeout) {
       await delay(200);
     }
@@ -635,21 +634,12 @@ async function waitForSubmissionConfirmation(page, timeout = 8000) {
     page.off('dialog', dialogHandler);
 
     if (dialogReceived) {
-      log.detail(`Response received in ${Date.now() - startTime}ms`);
+      const responseTime = Date.now() - startTime;
+      log.detail(`Response received in ${responseTime}ms`);
       return dialogResult;
     }
 
-    // No dialog received - check for page changes
-    log.warning("No confirmation dialog received", 2);
-    
-    // Wait a bit more for network activity
-    try {
-      await page.waitForNetworkIdle({ timeout: 2000, idleTime: 500 });
-      log.detail("Network idle detected");
-    } catch (e) {
-      log.detail("Network still active");
-    }
-
+    log.warning("⚠️ No server confirmation received within timeout", 2);
     return 'timeout';
 
   } catch (e) {
@@ -725,32 +715,44 @@ async function findSubjectOption(page, selectId, subjectCode) {
 }
 async function checkForAlreadySubmittedAlert(page, timeoutMs = 2000) {
   return new Promise((resolve) => {
-    let alertDetected = false;
     let timeoutId = null;
     
     const handler = async (dialog) => {
-      const msg = dialog.message().toLowerCase();
-      if (msg.includes('already submitted') || msg.includes('already given')) {
-        alertDetected = true;
-        await dialog.dismiss().catch(() => {});
-        log.info(`📢 Alert: "${dialog.message()}"`, 2);
-        log.skip("⏭️ Skipping to next - feedback already submitted", 2);
+      const msg = dialog.message();
+      const msgLower = msg.toLowerCase();
+      
+      if (msgLower.includes('already submitted') || msgLower.includes('already given')) {
+        // Clear timeout immediately
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
         
-        // Clear timeout and remove handler
-        if (timeoutId) clearTimeout(timeoutId);
+        // Accept dialog
+        await dialog.accept().catch(() => {});
+        
+        // Log ONCE
+        log.info(`📢 Server: "${msg}"`, 2);
+        log.warning("⚠️ DUPLICATE: Feedback already exists", 2);
+        log.skip("⏭️ Skipping to next item", 2);
+        
+        // Remove handler
         page.off('dialog', handler);
+        
+        // Return true immediately
         resolve(true);
+        return;
       } else {
-        // Not our alert, accept and continue
+        // Not a duplicate alert
         await dialog.accept().catch(() => {});
       }
     };
     
-    page.once('dialog', handler);
+    page.on('dialog', handler);
     
     timeoutId = setTimeout(() => {
       page.off('dialog', handler);
-      resolve(alertDetected);
+      resolve(false);
     }, timeoutMs);
   });
 }
@@ -927,7 +929,7 @@ async function submitForm(page, selector) {
   }
 }
 
-// ============= FEEDBACK SUBMISSION FUNCTIONS =============
+// ============= FIXED THEORY FEEDBACK - STOPS IMMEDIATELY ON DUPLICATE =============
 async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption) {
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher name provided`);
@@ -941,13 +943,15 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
   try {
     await page.waitForSelector('#ContentPlaceHolder1_ddlSubject', { visible: true, timeout: 5000 });
   } catch (e) {
-    log.error("Theory page did not load properly");
+    log.error("❌ Theory page did not load", 2);
     stats.totalFailed++;
     return false;
   }
 
+  // Select subject
   const subject = await findSubjectOption(page, '#ContentPlaceHolder1_ddlSubject', subjectCode);
   if (!subject) {
+    log.error("❌ Subject not found", 2);
     stats.totalSkipped++;
     stats.skippedItems.push({ category: 'Theory', subject: subjectCode, reason: 'Subject not found' });
     return false;
@@ -955,61 +959,65 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
 
   await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
   await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
-  log.detail(`Selected: ${subject.text}`);
+  log.detail(`✓ Selected: ${subject.text}`);
   await delay(1000);
 
-  // Check for alert after subject selection
-  const alertAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
-  if (alertAfterSubject) {
+  // Check for duplicate after subject selection
+  const isDuplicateAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
+  if (isDuplicateAfterSubject) {
     stats.duplicateAttempts.push(`Theory: ${subjectCode} - ${teacherName}`);
-    return 'duplicate'; // SKIP EVERYTHING - return immediately
+    return 'duplicate'; // ✅ RETURN IMMEDIATELY - NO FURTHER ACTION
   }
 
-  await delay(500);
-
+  // Select teacher
   const teacher = await findTeacherOption(page, '#ContentPlaceHolder1_ddlTeacherCode', teacherName);
   if (!teacher) {
+    log.error("❌ Teacher not found", 2);
     stats.totalSkipped++;
-    stats.skippedItems.push({ category: 'Theory', subject: subjectCode, reason: `Teacher not found` });
+    stats.skippedItems.push({ category: 'Theory', subject: subjectCode, reason: 'Teacher not found' });
     return false;
   }
 
   await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
   await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
-  log.detail(`Selected: ${teacher.text}`);
+  log.detail(`✓ Selected: ${teacher.text}`);
   await delay(1000);
 
-  // Check for alert after teacher selection
-  const alertAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
-  if (alertAfterTeacher) {
+  // Check for duplicate after teacher selection
+  const isDuplicateAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
+  if (isDuplicateAfterTeacher) {
     stats.duplicateAttempts.push(`Theory: ${subjectCode} - ${teacherName}`);
-    return 'duplicate'; // SKIP EVERYTHING - return immediately
+    return 'duplicate'; // ✅ RETURN IMMEDIATELY - NO FURTHER ACTION
   }
 
-  // Only reach here if NO duplicate alert
+  // ✅ Only reach here if NO duplicate detected
+  log.success("✓ Proceeding with submission", 2);
+  
   await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
   await delay(800);
 
+  // Fill questions
   const fillResult = await fillAllQuestions(page, feedbackOption);
 
   if (fillResult.total === 0) {
-    log.warning("No questions found", 2);
+    log.warning("⚠️ No questions found", 2);
     stats.totalFailed++;
     return false;
   }
 
+  // Submit form
   const submitSuccess = await submitForm(page, '#ContentPlaceHolder1_btn_Submit');
   
   if (!submitSuccess) {
-    log.error("Failed to click submit button", 2);
+    log.error("❌ Submit failed", 2);
     stats.totalFailed++;
     return false;
   }
 
-  const confirmResult = await waitForSubmissionConfirmation(page, 8000);
+  // Wait for confirmation
+  const confirmResult = await waitForSubmissionConfirmation(page, 5000);
 
   if (confirmResult === 'success') {
-    log.success("📊 Server confirmed: Data submitted successfully", 2);
     markFeedbackSubmitted('Theory Feedback', subject.text, teacherName);
     return true;
   }
@@ -1019,15 +1027,22 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
     return 'duplicate';
   }
 
-  if (confirmResult === 'timeout' || confirmResult === 'unknown') {
-    log.warning("No clear confirmation - submission may have succeeded", 2);
-    markFeedbackSubmitted('Theory Feedback', subject.text, teacherName);
-    return true;
+  if (confirmResult === 'error') {
+    stats.totalFailed++;
+    return false;
+  }
+
+  if (confirmResult === 'timeout') {
+    log.warning("⚠️ Timeout - submission status unknown", 2);
+    stats.totalFailed++;
+    return false;
   }
 
   stats.totalFailed++;
   return false;
 }
+
+// ============= FIXED LAB FEEDBACK =============
 async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption) {
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
@@ -1040,67 +1055,66 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
     await navigateToPage(page, 'lab');
     await page.waitForSelector('#ContentPlaceHolder1_ddlSubject', { visible: true, timeout: 5000 });
     
-    await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
     const subject = await findSubjectOption(page, '#ContentPlaceHolder1_ddlSubject', subjectCode);
-    
     if (!subject) {
+      log.error("❌ Subject not found", 2);
       stats.totalSkipped++;
       stats.skippedItems.push({ category: 'Lab', subject: subjectCode, reason: 'Subject not found' });
       return false;
     }
     
+    await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
     await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
-    log.detail(`Selected: ${subject.text}`);
+    log.detail(`✓ Selected: ${subject.text}`);
     await delay(1000);
     
-    const alertAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
-    if (alertAfterSubject) {
+    const isDuplicateAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
+    if (isDuplicateAfterSubject) {
       stats.duplicateAttempts.push(`Lab: ${subjectCode} - ${teacherName}`);
-      return 'duplicate'; // SKIP EVERYTHING
+      return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
     
-    await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
     const teacher = await findTeacherOption(page, '#ContentPlaceHolder1_ddlTeacherCode', teacherName);
-    
     if (!teacher) {
+      log.error("❌ Teacher not found", 2);
       stats.totalSkipped++;
-      stats.skippedItems.push({ category: 'Lab', subject: subjectCode, reason: `Teacher not found` });
+      stats.skippedItems.push({ category: 'Lab', subject: subjectCode, reason: 'Teacher not found' });
       return false;
     }
     
+    await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
     await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
-    log.detail(`Selected: ${teacher.text}`);
+    log.detail(`✓ Selected: ${teacher.text}`);
     await delay(1000);
     
-    const alertAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
-    if (alertAfterTeacher) {
+    const isDuplicateAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
+    if (isDuplicateAfterTeacher) {
       stats.duplicateAttempts.push(`Lab: ${subjectCode} - ${teacherName}`);
-      return 'duplicate'; // SKIP EVERYTHING
+      return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
     
-    // Only reach here if NO duplicate
+    log.success("✓ Proceeding with submission", 2);
+    
     await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
     await delay(800);
     
     const result = await fillAllQuestions(page, feedbackOption);
-    
     if (result.total === 0) {
-      log.warning("No questions found", 2);
+      log.warning("⚠️ No questions found", 2);
       stats.totalFailed++;
       return false;
     }
     
     const submitSuccess = await submitForm(page, '#ContentPlaceHolder1_btn_Submit');
-    
     if (!submitSuccess) {
+      log.error("❌ Submit failed", 2);
       stats.totalFailed++;
       return false;
     }
 
-    const confirmResult = await waitForSubmissionConfirmation(page, 8000);
+    const confirmResult = await waitForSubmissionConfirmation(page, 5000);
 
     if (confirmResult === 'success') {
-      log.success("📊 Server confirmed: Data submitted successfully", 2);
       markFeedbackSubmitted('Lab Feedback', subject.text, teacherName);
       return true;
     }
@@ -1109,22 +1123,23 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
       stats.duplicateAttempts.push(`Lab: ${subjectCode} - ${teacherName}`);
       return 'duplicate';
     }
-    
-    if (confirmResult === 'timeout' || confirmResult === 'unknown') {
-      log.warning("No clear confirmation - submission may have succeeded", 2);
-      markFeedbackSubmitted('Lab Feedback', subject.text, teacherName);
-      return true;
+
+    if (confirmResult === 'error' || confirmResult === 'timeout') {
+      stats.totalFailed++;
+      return false;
     }
     
     stats.totalFailed++;
     return false;
     
   } catch (e) {
-    log.error(`Lab submission error: ${e.message}`, 2);
+    log.error(`Lab error: ${e.message}`, 2);
     stats.totalFailed++;
     return false;
   }
 }
+
+// ============= FIXED MENTOR FEEDBACK =============
 async function submitMentorFeedback(page, dept, name, feedbackOption) {
   if (!dept || !name) {
     log.skip('Skipping Mentor - Missing data');
@@ -1137,9 +1152,8 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
     await navigateToPage(page, 'mentor');
     await page.waitForSelector('#ContentPlaceHolder1_ddldept', { visible: true, timeout: 5000 });
     
-    log.action("Selecting mentor details...", 2);
+    log.action("Selecting mentor...", 2);
     
-    // Select department
     await scrollToElement(page, '#ContentPlaceHolder1_ddldept');
     
     const deptOptions = await page.evaluate((selectId) => {
@@ -1157,16 +1171,15 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
     );
     
     if (!deptMatch) {
-      log.error(`Department "${dept}" not found`, 2);
+      log.error(`❌ Department not found`, 2);
       stats.totalFailed++;
       return false;
     }
     
     await page.select("#ContentPlaceHolder1_ddldept", deptMatch.value);
-    log.detail(`Department: ${deptMatch.text}`);
-    await delay(1500); // Wait for teacher dropdown to populate
+    log.detail(`✓ Department: ${deptMatch.text}`);
+    await delay(1500);
     
-    // Select mentor
     await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
     
     const teacherOptions = await page.evaluate((selectId) => {
@@ -1185,63 +1198,66 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
     });
     
     if (!teacherMatch) {
-      log.error(`Mentor "${name}" not found`, 2);
+      log.error(`❌ Mentor not found`, 2);
       stats.totalFailed++;
       return false;
     }
     
     await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacherMatch.value);
-    log.detail(`Mentor: ${teacherMatch.text}`);
+    log.detail(`✓ Mentor: ${teacherMatch.text}`);
     await delay(1000);
     
-    const alertAfterSelection = await checkForAlreadySubmittedAlert(page, 1500);
-    if (alertAfterSelection) {
-      log.skip("⏭️ Already submitted - skipping", 2);
-      return 'duplicate';
+    const isDuplicate = await checkForAlreadySubmittedAlert(page, 1500);
+    if (isDuplicate) {
+      stats.duplicateAttempts.push(`Mentor: ${name} (${dept})`);
+      return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
+    
+    log.success("✓ Proceeding with submission", 2);
     
     await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
     await delay(800);
     
     const result = await fillAllQuestions(page, feedbackOption);
-    
     if (result.total === 0) {
-      log.warning("No questions found", 2);
+      log.warning("⚠️ No questions found", 2);
     }
 
     const submitSuccess = await submitForm(page, '#ContentPlaceHolder1_btn_Submit');
-    
     if (!submitSuccess) {
-      log.error("Failed to submit mentor feedback", 2);
+      log.error("❌ Submit failed", 2);
       stats.totalFailed++;
       return false;
     }
 
-    const confirmResult = await waitForSubmissionConfirmation(page, 8000);
+    const confirmResult = await waitForSubmissionConfirmation(page, 5000);
+
+    if (confirmResult === 'success') {
+      markFeedbackSubmitted('Mentor Feedback', dept, name);
+      return true;
+    }
 
     if (confirmResult === 'duplicate') {
       stats.duplicateAttempts.push(`Mentor: ${name} (${dept})`);
       return 'duplicate';
     }
 
-    if (confirmResult === 'success') {
-      log.success("📊 Server response: Data submitted successfully", 2);
-      markFeedbackSubmitted('Mentor Feedback', dept, name);
-      return true;
+    if (confirmResult === 'error' || confirmResult === 'timeout') {
+      stats.totalFailed++;
+      return false;
     }
 
-    if (confirmResult === 'timeout') {
-      return true;
-    }
-
+    stats.totalFailed++;
     return false;
     
   } catch (e) {
-    log.error(`Mentor submission error: ${e.message}`, 2);
+    log.error(`Mentor error: ${e.message}`, 2);
     stats.totalFailed++;
     return false;
   }
 }
+
+// ============= FIXED TEACHING FEEDBACK =============
 async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOption) {
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
@@ -1254,68 +1270,66 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
     await navigateToPage(page, 'teaching');
     await page.waitForSelector('#ContentPlaceHolder1_ddlSubject', { visible: true, timeout: 5000 });
     
-    await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
     const subject = await findSubjectOption(page, '#ContentPlaceHolder1_ddlSubject', subjectCode);
-
     if (!subject) {
+      log.error("❌ Subject not found", 2);
       stats.totalSkipped++;
       stats.skippedItems.push({ category: 'Teaching', subject: subjectCode, reason: 'Subject not found' });
       return false;
     }
     
+    await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
     await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
-    log.detail(`Selected: ${subject.text}`);
+    log.detail(`✓ Selected: ${subject.text}`);
     await delay(1000);
     
-    const alertAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
-    if (alertAfterSubject) {
+    const isDuplicateAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
+    if (isDuplicateAfterSubject) {
       stats.duplicateAttempts.push(`Teaching: ${subjectCode} - ${teacherName}`);
-      return 'duplicate'; // SKIP EVERYTHING
+      return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
     
-    await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
     const teacher = await findTeacherOption(page, '#ContentPlaceHolder1_ddlTeacherCode', teacherName);
-    
     if (!teacher) {
+      log.error("❌ Teacher not found", 2);
       stats.totalSkipped++;
-      stats.skippedItems.push({ category: 'Teaching', subject: subjectCode, reason: `Teacher not found` });
+      stats.skippedItems.push({ category: 'Teaching', subject: subjectCode, reason: 'Teacher not found' });
       return false;
     }
     
+    await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
     await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
-    log.detail(`Selected: ${teacher.text}`);
+    log.detail(`✓ Selected: ${teacher.text}`);
     await delay(1000);
     
-    const alertAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
-    if (alertAfterTeacher) {
+    const isDuplicateAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
+    if (isDuplicateAfterTeacher) {
       stats.duplicateAttempts.push(`Teaching: ${subjectCode} - ${teacherName}`);
-      return 'duplicate'; // SKIP EVERYTHING
+      return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
     
-    // Only reach here if NO duplicate
+    log.success("✓ Proceeding with submission", 2);
+    
     await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
     await delay(800);
     
     const result = await fillAllQuestions(page, feedbackOption);
-    
     if (result.total === 0) {
-      log.warning("No questions found", 2);
+      log.warning("⚠️ No questions found", 2);
       stats.totalFailed++;
       return false;
     }
     
     const submitSuccess = await submitForm(page, '#ContentPlaceHolder1_btn_Submit');
-    
     if (!submitSuccess) {
-      log.error("Failed to submit teaching feedback", 2);
+      log.error("❌ Submit failed", 2);
       stats.totalFailed++;
       return false;
     }
 
-    const confirmResult = await waitForSubmissionConfirmation(page, 8000);
+    const confirmResult = await waitForSubmissionConfirmation(page, 5000);
 
     if (confirmResult === 'success') {
-      log.success("📊 Server confirmed: Data submitted successfully", 2);
       markFeedbackSubmitted('Teaching & Learning Feedback', subject.text, teacherName);
       return true;
     }
@@ -1325,17 +1339,16 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
       return 'duplicate';
     }
 
-    if (confirmResult === 'timeout' || confirmResult === 'unknown') {
-      log.warning("No clear confirmation - submission may have succeeded", 2);
-      markFeedbackSubmitted('Teaching & Learning Feedback', subject.text, teacherName);
-      return true;
+    if (confirmResult === 'error' || confirmResult === 'timeout') {
+      stats.totalFailed++;
+      return false;
     }
 
     stats.totalFailed++;
     return false;
     
   } catch (e) {
-    log.error(`Teaching submission error: ${e.message}`, 2);
+    log.error(`Teaching error: ${e.message}`, 2);
     stats.totalFailed++;
     return false;
   }

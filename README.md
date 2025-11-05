@@ -3,7 +3,7 @@
 
 Tired of filling endless feedback forms? Let this bot do it for you automatically in less than 5 minutes!
 
-📘 **Refer to [this link](https://drive.google.com/file/d/1QPbRvdQBOpQpqxqFi3j-PFBMJTQZOuet/view?usp=sharing)** to get a detailed understanding of how the bot works.
+📘 **Refer to [this link](https://drive.google.com/file/d/1n_JXNliyj0Nkn2cihvfX0Vd6b8CFk6yZ/view?usp=sharing)** to get a refrence of how the bot works.
 
 ## ✨ Features
 
