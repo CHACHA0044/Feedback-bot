@@ -9,7 +9,7 @@ Tired of filling endless feedback forms? Let this bot do it for you automaticall
 **Worked when used on:** `6 Nov 2025`
 
 > **Note:**  
-> If the bot worked successfully for you, please update this date by editing the README or sending a pull request.
+> If the bot worked successfully for you, please update this date by sending a pull request.
 
 
 ## ✨ Features
