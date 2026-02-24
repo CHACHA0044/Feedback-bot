@@ -1,7 +1,7 @@
 # Feedback-bot
 # 🤖 Feedback Automation Bot
 
-Tired of filling endless feedback forms? Let this bot do it for you automatically in less than 5 minutes!
+Tired of filling endless feedback forms? Let this bot do it for you automatically in less than 5 minutes! **Captcha? No problem.**
 
 📘 **Refer to [this link](https://drive.google.com/file/d/1n_JXNliyj0Nkn2cihvfX0Vd6b8CFk6yZ/view?usp=sharing)** to get a refrence of how the bot works.
 
