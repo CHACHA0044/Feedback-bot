@@ -55,7 +55,7 @@ function displayWelcomeBanner() {
     `• Don't interrupt the process`,
     `• Review the .env file for correct format`,
     `• After completion you can see the final logs`,
-    `• You can check manually if having doubts`,
+    `• You can check manually if having doubts `,
     ``
   ];
 
