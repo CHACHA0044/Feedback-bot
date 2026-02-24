@@ -7,6 +7,7 @@ Tired of filling endless feedback forms? Let this bot do it for you automaticall
 
 ## ✅ Last Verified Working
 **Worked when used on:** `6 Nov 2025`
+**Update:** `25 Feb 2026, manual captcha filling added`
 
 > **Note:**  
 > If the bot worked successfully for you, please update this date by sending a pull request.
@@ -18,6 +19,7 @@ Tired of filling endless feedback forms? Let this bot do it for you automaticall
 - ✅ Automated Lab Feedback  
 - ✅ Automated Mentor Feedback
 - ✅ Automated Teaching & Learning Feedback
+- ✅ Manual Captcha Handling (New)
 - ✅ Smart duplicate detection
 - ✅ Skips already filled forms
 - ✅ Detailed execution logs
@@ -132,11 +134,15 @@ npm start
 
 ## 🎯 How It Works
 
-1. Bot logs into IUSMS portal
-2. Navigates to feedback sections
-3. Fills forms based on your `.env` configuration
-4. Automatically detects already submitted feedback
-5. Provides detailed summary of all actions
+1. Bot enters your credentials automatically.
+2. Bot pauses for **Manual Captcha Step**:
+   - Solve the captcha in the browser window.
+   - Click the **LOGIN** button in the browser.
+   - Once the dashboard loads, go back to the terminal and press **ENTER**.
+3. Navigates to feedback sections
+4. Fills forms based on your `.env` configuration
+5. Automatically detects already submitted feedback and skips them
+6. Provides detailed summary of all actions
 
 ## 🐛 Troubleshooting
 

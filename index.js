@@ -53,7 +53,7 @@ function displayWelcomeBanner() {
     `${colors.red}⚠ Important:${colors.reset}`,
     `• Keep your browser window visible during execution`,
     `• Don't interrupt the process`,
-    `• Review the .env.example file for correct format`,
+    `• Review the .env file for correct format`,
     `• After completion you can see the final logs`,
     `• You can check manually if having doubts`,
     ``
@@ -84,8 +84,8 @@ async function getUserConfirmation() {
 
   return new Promise((resolve) => {
     rl.question(
-      colors.bright + colors.green + "🚀 Should I start filling your feedback? " + 
-      colors.yellow + "(Y/N): " + colors.reset, 
+      colors.bright + colors.green + "🚀 Should I start filling your feedback? " +
+      colors.yellow + "(Y/N): " + colors.reset,
       (answer) => {
         rl.close();
         const response = answer.trim().toUpperCase();
@@ -95,12 +95,44 @@ async function getUserConfirmation() {
   });
 }
 
+/**
+ * Pauses execution and waits for user to press ENTER in terminal.
+ * @param {string} message - The message to display to the user.
+ */
+async function waitForEnter(message) {
+  const colors = {
+    reset: '\x1b[0m',
+    bright: '\x1b[1m',
+    cyan: '\x1b[36m',
+    yellow: '\x1b[33m',
+    green: '\x1b[32m',
+    rainbow: '\x1b[35m'
+  };
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  console.log("\n" + "=".repeat(70));
+  console.log(colors.bright + colors.cyan + "👉 ACTION REQUIRED" + colors.reset);
+  console.log(colors.yellow + message + colors.reset);
+  console.log("=".repeat(70) + "\n");
+
+  return new Promise((resolve) => {
+    rl.question(colors.bright + colors.green + "⌨️  Press [ENTER] when ready to continue... " + colors.reset, () => {
+      rl.close();
+      resolve();
+    });
+  });
+}
+
 // ============= CONFIGURATION =============
-const { 
-  ENROLLMENT_NO, 
-  PASSWORD, 
-  FEEDBACK_OPTION, 
-  MENTOR_DEPT, 
+const {
+  ENROLLMENT_NO,
+  PASSWORD,
+  FEEDBACK_OPTION,
+  MENTOR_DEPT,
   MENTOR_NAME,
   THEORY_SUBJECTS,
   THEORY_TEACHERS,
@@ -178,7 +210,8 @@ const stats = {
   skippedItems: [],
   missingEnvData: [],
   submittedFeedback: new Set(),
-  duplicateAttempts: []
+  duplicateAttempts: [],
+  lastDuplicateDetected: false // ✅ Flag for skip logic
 };
 
 // ============= LOGGING UTILITIES =============
@@ -188,52 +221,52 @@ const log = {
     console.log(`  ${title}`);
     console.log(`${"=".repeat(70)}\n`);
   },
-  
+
   subsection: (emoji, text) => {
     console.log(`\n${emoji} ${text}`);
     console.log(`${"-".repeat(60)}`);
   },
-  
+
   info: (text, indent = 1) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}ℹ️  ${text}`);
   },
-  
+
   success: (text, indent = 1) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}✅ ${text}`);
   },
-  
+
   error: (text, indent = 1) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}❌ ${text}`);
   },
-  
+
   warning: (text, indent = 1) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}⚠️  ${text}`);
   },
-  
+
   action: (text, indent = 1) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}▶️  ${text}`);
   },
-  
+
   detail: (text, indent = 2) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}• ${text}`);
   },
-  
+
   scroll: (text, indent = 2) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}📜 ${text}`);
   },
-  
+
   skip: (text, indent = 1) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}⏭️  ${text}`);
   },
-  
+
   time: (text, indent = 1) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}⏱️  ${text}`);
@@ -249,7 +282,7 @@ function formatDuration(ms) {
   const seconds = Math.floor(ms / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
-  
+
   if (hours > 0) {
     return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
   } else if (minutes > 0) {
@@ -276,7 +309,7 @@ async function handleMultiPageNavigation(page, startUrl) {
   try {
     // Get current URL
     const currentUrl = page.url();
-    
+
     // If we've navigated away from start URL, go back
     if (!currentUrl.includes(startUrl) && currentUrl !== 'about:blank') {
       log.warning("Detected page navigation, returning to main page...", 2);
@@ -302,20 +335,25 @@ async function navigateToURL(page, url, pageName) {
     // Production mode - actual page navigation
     log.action(`Navigating to ${pageName}...`);
     log.detail(`URL: ${url}`);
-    
+
     try {
-      await page.goto(url, { 
-        waitUntil: 'domcontentloaded', 
-        timeout: 15000 
+      await page.goto(url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000
       });
       await delay(800);
       log.success(`Loaded ${pageName}`);
+      return true;
     } catch (e) {
+      if (e.message.includes('Session closed') || e.message.includes('Target closed') || e.message.includes('Page.navigate')) {
+        log.error(`❌ Connection lost: Browser window was closed or session timed out.`, 2);
+        throw e; // Rethrow to trigger fatal error handling
+      }
       log.error(`Failed to navigate to ${pageName}: ${e.message}`, 2);
-      throw e;
+      return false;
     }
   }
-  
+
   await ensurePageVisible(page);
 }
 
@@ -355,11 +393,11 @@ async function scrollToElement(page, selector, smooth = true) {
     if (!exists) {
       return false;
     }
-    
+
     if (smooth) {
       log.scroll(`Scrolling to: ${selector}`);
     }
-    
+
     await page.evaluate((sel) => {
       const element = document.querySelector(sel);
       if (element) {
@@ -385,7 +423,7 @@ async function smoothScrollToView(page, selector) {
       if (element) {
         const rect = element.getBoundingClientRect();
         const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight;
-        
+
         if (!isVisible) {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
@@ -406,22 +444,22 @@ async function ensurePageVisible(page) {
 async function findLoginFields(page) {
   return await page.evaluate(() => {
     // Try to find enrollment/username field
-    const enrollmentInput = 
+    const enrollmentInput =
       document.querySelector('input[type="text"]') ||
       document.querySelector('input[name*="enroll"]') ||
       document.querySelector('input[name*="user"]') ||
       document.querySelector('input[placeholder*="Enrollment"]') ||
       document.querySelector('input[placeholder*="enrollment"]');
-    
+
     // Try to find password field
-    const passwordInput = 
+    const passwordInput =
       document.querySelector('input[type="password"]');
-    
+
     return {
       enrollmentSelector: enrollmentInput ? getSelector(enrollmentInput) : null,
       passwordSelector: passwordInput ? getSelector(passwordInput) : null
     };
-    
+
     function getSelector(element) {
       if (element.id) return `#${element.id}`;
       if (element.name) return `input[name="${element.name}"]`;
@@ -433,25 +471,25 @@ async function findLoginFields(page) {
 // ============= FEEDBACK TRACKING =============
 async function checkIfFeedbackExists(page, category, subject, teacher) {
   const feedbackKey = `${category}-${subject}-${teacher}`;
-  
+
   if (stats.submittedFeedback.has(feedbackKey)) {
     return true;
   }
-  
+
   // Check localStorage for existing feedback
   const exists = await page.evaluate((cat, subj, teach) => {
     try {
       const responses = JSON.parse(localStorage.getItem('feedbackResponses')) || [];
-      return responses.some(r => 
-        r.category === cat && 
-        r.subject.includes(subj) && 
+      return responses.some(r =>
+        r.category === cat &&
+        r.subject.includes(subj) &&
         r.teacher === teach
       );
     } catch (e) {
       return false;
     }
   }, category, subject, teacher);
-  
+
   return exists;
 }
 
@@ -464,51 +502,51 @@ function markFeedbackSubmitted(category, subject, teacher) {
 async function fillAllQuestions(page, preferredOption) {
   log.action("Filling feedback questions...");
   await delay(300);
-  
+
   const result = await page.evaluate((preferred) => {
     const questionGroups = new Map();
     const radios = Array.from(document.querySelectorAll('input[type="radio"]'));
-    
+
     // Group radio buttons by question
     radios.forEach(radio => {
       const name = radio.name;
       const form = radio.closest('form');
-      
+
       // Check if radio is visible and belongs to a valid question
-      const isVisible = radio.offsetParent !== null && 
-                       form && form.offsetParent !== null;
-      
+      const isVisible = radio.offsetParent !== null &&
+        form && form.offsetParent !== null;
+
       if (!isVisible || !name || name === 'semester') {
         return;
-        }
+      }
       if (!name.includes('FeedbackGroup') && !name.includes('Questions')) {
         return;
-        }
+      }
       if (!questionGroups.has(name)) {
         questionGroups.set(name, []);
       }
-      
+
       questionGroups.get(name).push({
         value: radio.value,
         element: radio
       });
     });
-    
+
     let answered = 0;
     let total = questionGroups.size;
     const errors = [];
     const details = [];
-    
+
     // Fill each question with preferred option
     questionGroups.forEach((options, questionName) => {
       const values = options.map(o => o.value);
       let selectedValue = preferred;
-      
+
       // If preferred option doesn't exist, pick the best available
       if (!values.includes(preferred)) {
         selectedValue = values[values.length - 1] || values[0];
       }
-      
+
       const option = options.find(o => o.value === selectedValue);
       if (option && option.element) {
         try {
@@ -522,20 +560,20 @@ async function fillAllQuestions(page, preferredOption) {
         errors.push(`No matching option for ${questionName}`);
       }
     });
-    
+
     return { answered, total, errors, details };
   }, preferredOption);
-  
+
   log.info(`Found ${result.total} question(s)`, 2);
-  
+
   if (result.answered > 0) {
     log.success(`Filled ${result.answered}/${result.total} question(s) with "${preferredOption}"`, 2);
   }
-  
+
   if (result.errors.length > 0) {
     log.warning(`${result.errors.length} error(s) while filling`, 2);
   }
-  
+
   return result;
 }
 
@@ -543,17 +581,18 @@ async function dismissAlerts(page) {
   page.on('dialog', async dialog => {
     const message = dialog.message();
     const msgLower = message.toLowerCase();
-    
+
     log.info(`📢 Alert: "${message}"`, 2);
-    
+
     if (msgLower.includes('already submitted') || msgLower.includes('already given')) {
       log.warning("⚠️ Duplicate detected by server", 2);
-      await dialog.accept().catch(() => {});
+      stats.lastDuplicateDetected = true; // ✅ Set flag to skip current subject
+      await dialog.accept().catch(() => { });
     } else if (msgLower.includes('success') || msgLower.includes('submitted')) {
       log.success("✅ Submission confirmed by server!", 2);
-      await dialog.accept().catch(() => {});
+      await dialog.accept().catch(() => { });
     } else {
-      await dialog.accept().catch(() => {});
+      await dialog.accept().catch(() => { });
     }
   });
 }
@@ -602,24 +641,24 @@ async function waitForSubmissionConfirmation(page, timeout = 5000) {
       dialogReceived = true;
       const msg = dialog.message();
       const msgLower = msg.toLowerCase();
-      
+
       log.info(`📢 Server Response: "${msg}"`, 2);
 
       if (msgLower.includes('already submitted') || msgLower.includes('already given')) {
         log.warning("⚠️ Duplicate detected", 2);
-        await dialog.accept().catch(() => {});
+        await dialog.accept().catch(() => { });
         dialogResult = 'duplicate';
       } else if (msgLower.includes('success') || msgLower.includes('submitted')) {
         log.success("✅ ✅ SERVER CONFIRMED: Data submitted successfully!", 2);
-        await dialog.accept().catch(() => {});
+        await dialog.accept().catch(() => { });
         dialogResult = 'success';
       } else if (msgLower.includes('error') || msgLower.includes('failed')) {
         log.error(`❌ Submission failed: ${msg}`, 2);
-        await dialog.accept().catch(() => {});
+        await dialog.accept().catch(() => { });
         dialogResult = 'error';
       } else {
         log.warning(`⚠️ Unexpected response: ${msg}`, 2);
-        await dialog.accept().catch(() => {});
+        await dialog.accept().catch(() => { });
         dialogResult = 'unknown';
       }
     };
@@ -652,7 +691,7 @@ async function getAllAvailableOptions(page, selectId) {
   return await page.evaluate((id) => {
     const select = document.querySelector(id);
     if (!select) return [];
-    
+
     return Array.from(select.options)
       .filter(opt => opt.value)
       .map(opt => ({
@@ -664,92 +703,92 @@ async function getAllAvailableOptions(page, selectId) {
 
 async function findSubjectOption(page, selectId, subjectCode) {
   log.action(`Searching for subject: "${subjectCode}"`, 2);
-  
+
   const result = await page.evaluate((id, code) => {
     const select = document.querySelector(id);
     if (!select) return { found: false, error: "Dropdown not found" };
-    
+
     const options = Array.from(select.options);
-    
+
     // Try exact match first
-    let option = options.find(opt => 
+    let option = options.find(opt =>
       opt.value && opt.value.toUpperCase() === code.toUpperCase()
     );
-    
+
     // Try partial match in value
     if (!option) {
-      option = options.find(opt => 
+      option = options.find(opt =>
         opt.value && opt.value.toUpperCase().includes(code.toUpperCase())
       );
     }
-    
+
     // Try matching in text content
     if (!option) {
-      option = options.find(opt => 
+      option = options.find(opt =>
         opt.textContent && opt.textContent.toUpperCase().includes(code.toUpperCase())
       );
     }
-    
+
     if (option) {
-      return { 
-        found: true, 
-        value: option.value, 
-        text: option.textContent.trim() 
+      return {
+        found: true,
+        value: option.value,
+        text: option.textContent.trim()
       };
     }
-    
-    return { 
-      found: false, 
+
+    return {
+      found: false,
       error: "Subject not found in dropdown",
       availableCount: options.length - 1
     };
   }, selectId, subjectCode);
-  
+
   if (result.found) {
     log.success(`Found: "${result.text}"`, 2);
   } else {
     log.error(`${result.error} (${result.availableCount} options available)`, 2);
   }
-  
+
   return result.found ? result : null;
 }
 async function checkForAlreadySubmittedAlert(page, timeoutMs = 2000) {
   return new Promise((resolve) => {
     let timeoutId = null;
-    
+
     const handler = async (dialog) => {
       const msg = dialog.message();
       const msgLower = msg.toLowerCase();
-      
+
       if (msgLower.includes('already submitted') || msgLower.includes('already given')) {
         // Clear timeout immediately
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
-        
+
         // Accept dialog
-        await dialog.accept().catch(() => {});
-        
+        await dialog.accept().catch(() => { });
+
         // Log ONCE
         log.info(`📢 Server: "${msg}"`, 2);
         log.warning("⚠️ DUPLICATE: Feedback already exists", 2);
         log.skip("⏭️ Skipping to next item", 2);
-        
+
         // Remove handler
         page.off('dialog', handler);
-        
+
         // Return true immediately
         resolve(true);
         return;
       } else {
         // Not a duplicate alert
-        await dialog.accept().catch(() => {});
+        await dialog.accept().catch(() => { });
       }
     };
-    
+
     page.on('dialog', handler);
-    
+
     timeoutId = setTimeout(() => {
       page.off('dialog', handler);
       resolve(false);
@@ -758,14 +797,14 @@ async function checkForAlreadySubmittedAlert(page, timeoutMs = 2000) {
 }
 async function findTeacherOption(page, selectId, teacherName) {
   log.action(`Searching for teacher: "${teacherName}"`, 2);
-  
+
   const result = await page.evaluate((id, name) => {
     const select = document.querySelector(id);
     if (!select) return { found: false, error: "Dropdown not found" };
-    
+
     const options = Array.from(select.options);
     const nameParts = name.toLowerCase().trim().split(' ').filter(p => p);
-    
+
     // Try exact match
     let option = options.find(opt => {
       if (!opt.value) return false;
@@ -773,52 +812,52 @@ async function findTeacherOption(page, selectId, teacherName) {
       const optValue = opt.value.toLowerCase();
       return optText === name.toLowerCase() || optValue === name.toLowerCase();
     });
-    
+
     // Try matching all name parts
     if (!option) {
       option = options.find(opt => {
         if (!opt.value) return false;
         const optText = opt.textContent.toLowerCase();
         const optValue = opt.value.toLowerCase();
-        return nameParts.every(part => 
+        return nameParts.every(part =>
           optText.includes(part) || optValue.includes(part)
         );
       });
     }
-    
+
     // Try matching any significant name part
     if (!option && nameParts.length > 0) {
       option = options.find(opt => {
         if (!opt.value) return false;
         const optText = opt.textContent.toLowerCase();
         const optValue = opt.value.toLowerCase();
-        return nameParts.some(part => 
+        return nameParts.some(part =>
           part.length > 2 && (optText.includes(part) || optValue.includes(part))
         );
       });
     }
-    
+
     if (option) {
-      return { 
-        found: true, 
-        value: option.value, 
-        text: option.textContent.trim() 
+      return {
+        found: true,
+        value: option.value,
+        text: option.textContent.trim()
       };
     }
-    
-    return { 
-      found: false, 
+
+    return {
+      found: false,
       error: "Teacher not found in dropdown",
       availableCount: options.length - 1
     };
   }, selectId, teacherName);
-  
+
   if (result.found) {
     log.success(`Found: "${result.text}"`, 2);
   } else {
     log.error(`${result.error} (${result.availableCount} options available)`, 2);
   }
-  
+
   return result.found ? result : null;
 }
 
@@ -831,16 +870,16 @@ async function navigateToPage(page, pageName) {
 async function submitForm(page, selector) {
   try {
     log.action("Preparing to submit form...", 2);
-    
+
     // First, scroll to submit button area
     await page.evaluate(() => {
-      window.scrollTo({ 
-        top: document.body.scrollHeight - 500, 
-        behavior: 'smooth' 
+      window.scrollTo({
+        top: document.body.scrollHeight - 500,
+        behavior: 'smooth'
       });
     });
     await delay(1000);
-    
+
     // Find the submit button with multiple strategies
     const possibleSelectors = [
       '#ContentPlaceHolder1_btn_Submit',
@@ -858,11 +897,11 @@ async function submitForm(page, selector) {
       buttonInfo = await page.evaluate((s) => {
         const el = document.querySelector(s);
         if (!el) return null;
-        
+
         const isVisible = el.offsetParent !== null;
         const rect = el.getBoundingClientRect();
         const isInViewport = rect.top >= 0 && rect.bottom <= window.innerHeight;
-        
+
         return {
           selector: s,
           visible: isVisible,
@@ -873,7 +912,7 @@ async function submitForm(page, selector) {
           tagName: el.tagName
         };
       }, sel);
-      
+
       if (buttonInfo && buttonInfo.visible) {
         foundSelector = sel;
         break;
@@ -886,7 +925,7 @@ async function submitForm(page, selector) {
     }
 
     log.detail(`Found button: ${buttonInfo.id || buttonInfo.name} (${buttonInfo.tagName})`);
-    
+
     // Scroll to button if not in viewport
     if (!buttonInfo.inViewport) {
       log.detail("Scrolling to submit button...");
@@ -901,14 +940,14 @@ async function submitForm(page, selector) {
 
     // Try clicking with multiple methods
     log.action(`Clicking submit button...`, 2);
-    
+
     // Method 1: Direct click
     try {
       await page.click(foundSelector);
       log.detail("Click executed");
     } catch (clickError) {
       log.warning(`Direct click failed: ${clickError.message}`, 2);
-      
+
       // Method 2: JavaScript click
       log.detail("Attempting JavaScript click...");
       await page.evaluate((sel) => {
@@ -962,7 +1001,14 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
   log.detail(`✓ Selected: ${subject.text}`);
   await delay(1000);
 
-  // Check for duplicate after subject selection
+  // Check for duplicate after selection (via global dialog handler flag)
+  if (stats.lastDuplicateDetected) {
+    stats.lastDuplicateDetected = false; // Reset flag
+    stats.duplicateAttempts.push(`Theory: ${subjectCode} - ${teacherName}`);
+    return 'duplicate';
+  }
+
+  // Check for duplicate after subject selection (local helper)
   const isDuplicateAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
   if (isDuplicateAfterSubject) {
     stats.duplicateAttempts.push(`Theory: ${subjectCode} - ${teacherName}`);
@@ -983,6 +1029,13 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
   log.detail(`✓ Selected: ${teacher.text}`);
   await delay(1000);
 
+  // Check for duplicate after teacher selection (via global dialog handler flag)
+  if (stats.lastDuplicateDetected) {
+    stats.lastDuplicateDetected = false; // Reset flag
+    stats.duplicateAttempts.push(`Theory: ${subjectCode} - ${teacherName}`);
+    return 'duplicate';
+  }
+
   // Check for duplicate after teacher selection
   const isDuplicateAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
   if (isDuplicateAfterTeacher) {
@@ -992,7 +1045,7 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
 
   // ✅ Only reach here if NO duplicate detected
   log.success("✓ Proceeding with submission", 2);
-  
+
   await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
   await delay(800);
 
@@ -1007,7 +1060,7 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
 
   // Submit form
   const submitSuccess = await submitForm(page, '#ContentPlaceHolder1_btn_Submit');
-  
+
   if (!submitSuccess) {
     log.error("❌ Submit failed", 2);
     stats.totalFailed++;
@@ -1050,11 +1103,11 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
     stats.skippedItems.push({ category: 'Lab', subject: subjectCode, reason: 'Missing teacher name' });
     return 'skipped';
   }
-  
+
   try {
     await navigateToPage(page, 'lab');
     await page.waitForSelector('#ContentPlaceHolder1_ddlSubject', { visible: true, timeout: 5000 });
-    
+
     const subject = await findSubjectOption(page, '#ContentPlaceHolder1_ddlSubject', subjectCode);
     if (!subject) {
       log.error("❌ Subject not found", 2);
@@ -1062,18 +1115,25 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
       stats.skippedItems.push({ category: 'Lab', subject: subjectCode, reason: 'Subject not found' });
       return false;
     }
-    
+
     await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
     await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
     log.detail(`✓ Selected: ${subject.text}`);
     await delay(1000);
-    
+
+    // Check for duplicate after selection (via global dialog handler flag)
+    if (stats.lastDuplicateDetected) {
+      stats.lastDuplicateDetected = false; // Reset flag
+      stats.duplicateAttempts.push(`Lab: ${subjectCode} - ${teacherName}`);
+      return 'duplicate';
+    }
+
     const isDuplicateAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
     if (isDuplicateAfterSubject) {
       stats.duplicateAttempts.push(`Lab: ${subjectCode} - ${teacherName}`);
       return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
-    
+
     const teacher = await findTeacherOption(page, '#ContentPlaceHolder1_ddlTeacherCode', teacherName);
     if (!teacher) {
       log.error("❌ Teacher not found", 2);
@@ -1081,30 +1141,37 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
       stats.skippedItems.push({ category: 'Lab', subject: subjectCode, reason: 'Teacher not found' });
       return false;
     }
-    
+
     await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
     await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
     log.detail(`✓ Selected: ${teacher.text}`);
     await delay(1000);
-    
+
+    // Check for duplicate after selection (via global dialog handler flag)
+    if (stats.lastDuplicateDetected) {
+      stats.lastDuplicateDetected = false; // Reset flag
+      stats.duplicateAttempts.push(`Lab: ${subjectCode} - ${teacherName}`);
+      return 'duplicate';
+    }
+
     const isDuplicateAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
     if (isDuplicateAfterTeacher) {
       stats.duplicateAttempts.push(`Lab: ${subjectCode} - ${teacherName}`);
       return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
-    
+
     log.success("✓ Proceeding with submission", 2);
-    
+
     await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
     await delay(800);
-    
+
     const result = await fillAllQuestions(page, feedbackOption);
     if (result.total === 0) {
       log.warning("⚠️ No questions found", 2);
       stats.totalFailed++;
       return false;
     }
-    
+
     const submitSuccess = await submitForm(page, '#ContentPlaceHolder1_btn_Submit');
     if (!submitSuccess) {
       log.error("❌ Submit failed", 2);
@@ -1128,10 +1195,10 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
       stats.totalFailed++;
       return false;
     }
-    
+
     stats.totalFailed++;
     return false;
-    
+
   } catch (e) {
     log.error(`Lab error: ${e.message}`, 2);
     stats.totalFailed++;
@@ -1147,15 +1214,15 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
     stats.skippedItems.push({ category: 'Mentor', reason: 'Missing department or name' });
     return 'skipped';
   }
-  
+
   try {
     await navigateToPage(page, 'mentor');
     await page.waitForSelector('#ContentPlaceHolder1_ddldept', { visible: true, timeout: 5000 });
-    
+
     log.action("Selecting mentor...", 2);
-    
+
     await scrollToElement(page, '#ContentPlaceHolder1_ddldept');
-    
+
     const deptOptions = await page.evaluate((selectId) => {
       const select = document.querySelector(selectId);
       if (!select) return [];
@@ -1164,24 +1231,24 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
         text: opt.textContent.trim()
       }));
     }, '#ContentPlaceHolder1_ddldept');
-    
-    const deptMatch = deptOptions.find(opt => 
+
+    const deptMatch = deptOptions.find(opt =>
       opt.text.toLowerCase().includes(dept.toLowerCase()) ||
       opt.value.toLowerCase().includes(dept.toLowerCase())
     );
-    
+
     if (!deptMatch) {
       log.error(`❌ Department not found`, 2);
       stats.totalFailed++;
       return false;
     }
-    
+
     await page.select("#ContentPlaceHolder1_ddldept", deptMatch.value);
     log.detail(`✓ Department: ${deptMatch.text}`);
     await delay(1500);
-    
+
     await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
-    
+
     const teacherOptions = await page.evaluate((selectId) => {
       const select = document.querySelector(selectId);
       if (!select) return [];
@@ -1190,34 +1257,41 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
         text: opt.textContent.trim()
       }));
     }, '#ContentPlaceHolder1_ddlTeacherCode');
-    
+
     const teacherMatch = teacherOptions.find(opt => {
       const nameParts = name.toLowerCase().split(' ').filter(p => p);
       const optText = opt.text.toLowerCase();
       return nameParts.some(part => optText.includes(part));
     });
-    
+
     if (!teacherMatch) {
       log.error(`❌ Mentor not found`, 2);
       stats.totalFailed++;
       return false;
     }
-    
+
     await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacherMatch.value);
     log.detail(`✓ Mentor: ${teacherMatch.text}`);
     await delay(1000);
-    
+
+    // Check for duplicate after selection (via global dialog handler flag)
+    if (stats.lastDuplicateDetected) {
+      stats.lastDuplicateDetected = false; // Reset flag
+      stats.duplicateAttempts.push(`Mentor: ${name} (${dept})`);
+      return 'duplicate';
+    }
+
     const isDuplicate = await checkForAlreadySubmittedAlert(page, 1500);
     if (isDuplicate) {
       stats.duplicateAttempts.push(`Mentor: ${name} (${dept})`);
       return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
-    
+
     log.success("✓ Proceeding with submission", 2);
-    
+
     await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
     await delay(800);
-    
+
     const result = await fillAllQuestions(page, feedbackOption);
     if (result.total === 0) {
       log.warning("⚠️ No questions found", 2);
@@ -1249,7 +1323,7 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
 
     stats.totalFailed++;
     return false;
-    
+
   } catch (e) {
     log.error(`Mentor error: ${e.message}`, 2);
     stats.totalFailed++;
@@ -1265,11 +1339,11 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
     stats.skippedItems.push({ category: 'Teaching', subject: subjectCode, reason: 'Missing teacher name' });
     return 'skipped';
   }
-  
+
   try {
     await navigateToPage(page, 'teaching');
     await page.waitForSelector('#ContentPlaceHolder1_ddlSubject', { visible: true, timeout: 5000 });
-    
+
     const subject = await findSubjectOption(page, '#ContentPlaceHolder1_ddlSubject', subjectCode);
     if (!subject) {
       log.error("❌ Subject not found", 2);
@@ -1277,18 +1351,25 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
       stats.skippedItems.push({ category: 'Teaching', subject: subjectCode, reason: 'Subject not found' });
       return false;
     }
-    
+
     await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
     await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
     log.detail(`✓ Selected: ${subject.text}`);
     await delay(1000);
-    
+
+    // Check for duplicate after selection (via global dialog handler flag)
+    if (stats.lastDuplicateDetected) {
+      stats.lastDuplicateDetected = false; // Reset flag
+      stats.duplicateAttempts.push(`Teaching: ${subjectCode} - ${teacherName}`);
+      return 'duplicate';
+    }
+
     const isDuplicateAfterSubject = await checkForAlreadySubmittedAlert(page, 1500);
     if (isDuplicateAfterSubject) {
       stats.duplicateAttempts.push(`Teaching: ${subjectCode} - ${teacherName}`);
       return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
-    
+
     const teacher = await findTeacherOption(page, '#ContentPlaceHolder1_ddlTeacherCode', teacherName);
     if (!teacher) {
       log.error("❌ Teacher not found", 2);
@@ -1296,30 +1377,37 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
       stats.skippedItems.push({ category: 'Teaching', subject: subjectCode, reason: 'Teacher not found' });
       return false;
     }
-    
+
     await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
     await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
     log.detail(`✓ Selected: ${teacher.text}`);
     await delay(1000);
-    
+
+    // Check for duplicate after selection (via global dialog handler flag)
+    if (stats.lastDuplicateDetected) {
+      stats.lastDuplicateDetected = false; // Reset flag
+      stats.duplicateAttempts.push(`Teaching: ${subjectCode} - ${teacherName}`);
+      return 'duplicate';
+    }
+
     const isDuplicateAfterTeacher = await checkForAlreadySubmittedAlert(page, 1500);
     if (isDuplicateAfterTeacher) {
       stats.duplicateAttempts.push(`Teaching: ${subjectCode} - ${teacherName}`);
       return 'duplicate'; // ✅ RETURN IMMEDIATELY
     }
-    
+
     log.success("✓ Proceeding with submission", 2);
-    
+
     await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
     await delay(800);
-    
+
     const result = await fillAllQuestions(page, feedbackOption);
     if (result.total === 0) {
       log.warning("⚠️ No questions found", 2);
       stats.totalFailed++;
       return false;
     }
-    
+
     const submitSuccess = await submitForm(page, '#ContentPlaceHolder1_btn_Submit');
     if (!submitSuccess) {
       log.error("❌ Submit failed", 2);
@@ -1346,7 +1434,7 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
 
     stats.totalFailed++;
     return false;
-    
+
   } catch (e) {
     log.error(`Teaching error: ${e.message}`, 2);
     stats.totalFailed++;
@@ -1358,7 +1446,7 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
 async function run() {
   stats.startTime = Date.now();
   const startTimestamp = getCurrentTimestamp();
-  
+
   log.section("🤖 FEEDBACK AUTOMATION BOT STARTED");
   log.time(`Start Time: ${startTimestamp}`);
   log.info("Configuration loaded successfully");
@@ -1369,9 +1457,9 @@ async function run() {
   log.detail(`Lab Subjects: ${Object.keys(labMap).length}`);
   log.detail(`Teaching Subjects: ${Object.keys(teachingMap).length}`);
   log.detail(`Mentor Feedback: ${MENTOR_DEPT && MENTOR_NAME ? 'Yes' : 'No'}`);
-  
+
   log.section("🌐 LAUNCHING BROWSER");
-  const browser = await puppeteer.launch({ 
+  const browser = await puppeteer.launch({
     headless: false,
     slowMo: 30,
     args: [
@@ -1382,9 +1470,9 @@ async function run() {
     ],
     defaultViewport: null
   });
-  
+
   const page = await browser.newPage();
-  
+
   // Set login URL based on environment
   let loginUrl;
   if (IS_LOCAL) {
@@ -1393,120 +1481,61 @@ async function run() {
   } else {
     loginUrl = URLS.production.login;
   }
-  
+
   dismissAlerts(page);
-//   page.on('dialog', async dialog => {
-//   const msg = dialog.message().toLowerCase();
-//   if (msg.includes('already submitted')) {
-//     log.warning('Detected already-submitted alert globally', 2);
-//     await dialog.dismiss().catch(() => {});
-//   }
-// });
+  //   page.on('dialog', async dialog => {
+  //   const msg = dialog.message().toLowerCase();
+  //   if (msg.includes('already submitted')) {
+  //     log.warning('Detected already-submitted alert globally', 2);
+  //     await dialog.dismiss().catch(() => {});
+  //   }
+  // });
   handleNetworkErrors(page);
   log.success("Browser launched successfully");
 
   // ============= LOGIN =============
   log.section("🔐 AUTHENTICATION");
-  
+
   log.action("Opening login page...");
   log.detail(`URL: ${loginUrl}`);
   await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
   await delay(800);
   log.success("Login page loaded");
-  
+
   log.action("Entering credentials...");
 
-    // Find the actual input field selectors
-    const loginFields = await findLoginFields(page);
+  // Find the actual input field selectors
+  const loginFields = await findLoginFields(page);
 
-    if (!loginFields.enrollmentSelector || !loginFields.passwordSelector) {
+  if (!loginFields.enrollmentSelector || !loginFields.passwordSelector) {
     log.error("Could not find login input fields");
     throw new Error("Login form fields not found on page");
-    }
-
-    log.detail(`Enrollment field: ${loginFields.enrollmentSelector}`);
-    log.detail(`Password field: ${loginFields.passwordSelector}`);
-
-    await scrollToElement(page, loginFields.enrollmentSelector, false);
-    await page.type(loginFields.enrollmentSelector, ENROLLMENT_NO, { delay: 30 });
-    log.detail("Enrollment number entered");
-
-    await scrollToElement(page, loginFields.passwordSelector, false);
-    await page.type(loginFields.passwordSelector, PASSWORD, { delay: 30 });
-    log.detail("Password entered");
-  
-// Replace the loginButtonSelector code block (around line 1044-1076) with this:
-
-log.action("Submitting login form...");
-
-// Find the login button dynamically
-const loginButtonSelector = await page.evaluate(() => {
-  // Try multiple possible selectors
-  let btn = document.querySelector('input[value="LOGIN"]') ||
-            document.querySelector('input[value="Login"]') ||
-            document.querySelector('button[type="submit"]') ||
-            document.querySelector('input[type="submit"]');
-  
-  // Try finding button by text content - FIXED VERSION
-  if (!btn) {
-    const buttons = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"]'));
-    btn = buttons.find(b => {
-      const text = (b.textContent || b.value || '').trim().toUpperCase();
-      return text === 'LOGIN' || text === 'LOG IN' || text === 'SUBMIT';
-    });
   }
-  
-  if (btn) {
-    // Return a reliable selector
-    if (btn.id) return `#${btn.id}`;
-    if (btn.name) return `[name="${btn.name}"]`;
-    if (btn.type === 'submit') return 'input[type="submit"]';
-    if (btn.className) {
-      const classes = btn.className.trim().split(/\s+/);
-      if (classes[0]) return `.${classes[0]}`;
-    }
-    // Last resort - return tag name
-    return btn.tagName.toLowerCase();
-  }
-  return null;
-});
 
-if (!loginButtonSelector) {
-  log.error("Could not find LOGIN button");
-  throw new Error("Login button not found on page");
-}
+  log.detail(`Enrollment field: ${loginFields.enrollmentSelector}`);
+  log.detail(`Password field: ${loginFields.passwordSelector}`);
 
-log.detail(`Login button found: ${loginButtonSelector}`);
+  await scrollToElement(page, loginFields.enrollmentSelector, false);
+  await page.type(loginFields.enrollmentSelector, ENROLLMENT_NO, { delay: 30 });
+  log.detail("Enrollment number entered");
 
-if (IS_LOCAL) {
-  // Local: Just click and navigate with JavaScript
-  await page.click(loginButtonSelector);
-  await delay(2000);
-  
-  await page.evaluate(() => {
-    if (typeof showPage === 'function') {
-      showPage('dashboard');
-    }
-  });
-  await delay(1000);
-} else {
-  // Production: Click and wait for page navigation
-  await Promise.all([
-    page.click(loginButtonSelector),
-    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {
-      log.warning("Navigation timeout, continuing...", 2);
-    })
-  ]);
-  await delay(1500);
-}
-  
+  await scrollToElement(page, loginFields.passwordSelector, false);
+  await page.type(loginFields.passwordSelector, PASSWORD, { delay: 30 });
+  log.detail("Password entered");
+
+  log.section("🧩 MANUAL CAPTCHA STEP");
+  const captchaMessage = "Enter captcha on the page, login and when page is loaded press ENTER in terminal";
+  await waitForEnter(captchaMessage);
+
+  log.success("Proceeding after manual login... ✓");
+
   await ensurePageVisible(page);
   log.success("Login successful! ✓");
 
   // ============= DASHBOARD =============
   log.section("📊 DASHBOARD");
   log.action("Verifying dashboard...");
-  
+
   const pageInfo = await getCurrentPageInfo(page);
   log.detail(`Current URL: ${pageInfo.url}`);
   let missingTheorySubjects = [];
@@ -1524,15 +1553,15 @@ if (IS_LOCAL) {
   // Check for available subjects
   if (IS_LOCAL) {
     log.section("📋 CHECKING AVAILABLE OPTIONS");
-    
+
     await navigateToPage(page, 'theory');
-    await page.waitForSelector('#theorySubject', { timeout: 3000 }).catch(() => {});
+    await page.waitForSelector('#theorySubject', { timeout: 3000 }).catch(() => { });
     const availableTheorySubjects = await getAllAvailableOptions(page, '#theorySubject');
     const providedTheorySubjects = Object.keys(theoryMap);
     const missingTheorySubjects = availableTheorySubjects.filter(
       opt => !providedTheorySubjects.some(s => opt.value.includes(s) || opt.text.includes(s))
     );
-    
+
     if (missingTheorySubjects.length > 0) {
       log.warning(`${missingTheorySubjects.length} theory subject(s) not in .env`);
     }
@@ -1540,7 +1569,7 @@ if (IS_LOCAL) {
 
   // Navigate to feedback
   log.section("📍 STARTING FEEDBACK SUBMISSION");
-  
+
   if (IS_LOCAL) {
     await navigateToPage(page, 'dashboard');
     await delay(500);
@@ -1553,64 +1582,64 @@ if (IS_LOCAL) {
   } else {
     await navigateToURL(page, URLS.production.feedbackOptions, 'feedbackOptions');
   }
-  
+
   await ensurePageVisible(page);
   log.success("Ready to submit feedback");
-// --- Detect and log all feedback links on the Feedback.aspx page ---
-try {
-  log.action("Scanning available feedback links on Feedback.aspx...", 1);
-  const links = await page.$$eval('a[id*="lnk"]', els =>
-    els.map(e => ({
-      id: e.id,
-      text: e.textContent.trim(),
-      href: e.href
-    }))
-  );
+  // --- Detect and log all feedback links on the Feedback.aspx page ---
+  try {
+    log.action("Scanning available feedback links on Feedback.aspx...", 1);
+    const links = await page.$$eval('a[id*="lnk"]', els =>
+      els.map(e => ({
+        id: e.id,
+        text: e.textContent.trim(),
+        href: e.href
+      }))
+    );
 
-  if (links.length === 0) {
-    log.warning("No feedback links detected on page.", 2);
-  } else {
-    links.forEach(l => log.detail(`Found link → [${l.id}] : "${l.text}" → ${l.href}`, 2));
+    if (links.length === 0) {
+      log.warning("No feedback links detected on page.", 2);
+    } else {
+      links.forEach(l => log.detail(`Found link → [${l.id}] : "${l.text}" → ${l.href}`, 2));
+    }
+
+    // specifically detect Teaching & Learning link
+    const teachLink = links.find(l =>
+      l.text.toLowerCase().includes('teaching') ||
+      l.id.toLowerCase().includes('teaching')
+    );
+
+    if (teachLink) {
+      log.success(`Teaching & Learning link detected: ${teachLink.text}`, 2);
+
+      // click it once to ensure session unlock
+      await page.click(`#${teachLink.id}`);
+      await delay(1500);
+
+      log.success("Teaching & Learning page opened via link click ✓", 2);
+      // go back to feedback page to continue sequence
+      await page.goto(URLS.production.feedbackOptions, { waitUntil: 'domcontentloaded' });
+      await delay(800);
+    } else {
+      log.warning("Teaching & Learning link not found in current DOM", 2);
+    }
+  } catch (err) {
+    log.error(`Teaching link detection error: ${err.message}`, 2);
   }
-
-  // specifically detect Teaching & Learning link
-  const teachLink = links.find(l =>
-    l.text.toLowerCase().includes('teaching') ||
-    l.id.toLowerCase().includes('teaching')
-  );
-
-  if (teachLink) {
-    log.success(`Teaching & Learning link detected: ${teachLink.text}`, 2);
-
-    // click it once to ensure session unlock
-    await page.click(`#${teachLink.id}`);
-    await delay(1500);
-
-    log.success("Teaching & Learning page opened via link click ✓", 2);
-    // go back to feedback page to continue sequence
-    await page.goto(URLS.production.feedbackOptions, { waitUntil: 'domcontentloaded' });
-    await delay(800);
-  } else {
-    log.warning("Teaching & Learning link not found in current DOM", 2);
-  }
-} catch (err) {
-  log.error(`Teaching link detection error: ${err.message}`, 2);
-}
 
   // ============= THEORY FEEDBACK =============
   if (Object.keys(theoryMap).length > 0) {
     log.section("📘 THEORY FEEDBACK SUBMISSION");
     log.info(`${Object.keys(theoryMap).length} theory subject(s) to process\n`);
-    
+
     let index = 0;
     for (const [subjectCode, teacherName] of Object.entries(theoryMap)) {
       index++;
-      
+
       log.subsection("📝", `Theory ${index}/${Object.keys(theoryMap).length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      
+
       const result = await submitTheoryFeedback(page, subjectCode, teacherName, FEEDBACK_OPTION);
-      
+
       if (result === true) {
         stats.totalSubmissions++;
         log.success(`Completed ✓\n`);
@@ -1621,7 +1650,7 @@ try {
       } else {
         log.error(`Failed ✗\n`);
       }
-      
+
       await delay(1000); // Longer delay between submissions
     }
   }
@@ -1630,16 +1659,16 @@ try {
   if (Object.keys(labMap).length > 0) {
     log.section("🧪 LAB FEEDBACK SUBMISSION");
     log.info(`${Object.keys(labMap).length} lab subject(s) to process\n`);
-    
+
     let index = 0;
     for (const [subjectCode, teacherName] of Object.entries(labMap)) {
       index++;
-      
+
       log.subsection("📝", `Lab ${index}/${Object.keys(labMap).length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      
+
       const result = await submitLabFeedback(page, subjectCode, teacherName, FEEDBACK_OPTION);
-      
+
       if (result === true) {
         stats.totalSubmissions++;
         log.success(`Completed ✓\n`);
@@ -1650,7 +1679,7 @@ try {
       } else {
         log.error(`Failed ✗\n`);
       }
-      
+
       await delay(1000);
     }
   }
@@ -1659,9 +1688,9 @@ try {
   if (MENTOR_DEPT || MENTOR_NAME) {
     log.section("👨‍🏫 MENTOR FEEDBACK SUBMISSION");
     log.info(`Dept: ${MENTOR_DEPT || 'NOT PROVIDED'}, Name: ${MENTOR_NAME || 'NOT PROVIDED'}`);
-    
+
     const result = await submitMentorFeedback(page, MENTOR_DEPT, MENTOR_NAME, FEEDBACK_OPTION);
-    
+
     if (result === true) {
       stats.totalSubmissions++;
       log.success("Completed ✓\n");
@@ -1672,7 +1701,7 @@ try {
     } else {
       log.error("Failed ✗\n");
     }
-    
+
     await delay(1000);
   }
 
@@ -1680,16 +1709,16 @@ try {
   if (Object.keys(teachingMap).length > 0) {
     log.section("📖 TEACHING & LEARNING FEEDBACK");
     log.info(`${Object.keys(teachingMap).length} teaching subject(s) to process\n`);
-    
+
     let index = 0;
     for (const [subjectCode, teacherName] of Object.entries(teachingMap)) {
       index++;
-      
+
       log.subsection("📝", `Teaching ${index}/${Object.keys(teachingMap).length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      
+
       const result = await submitTeachingFeedback(page, subjectCode, teacherName, FEEDBACK_OPTION);
-      
+
       if (result === true) {
         stats.totalSubmissions++;
         log.success(`Completed ✓\n`);
@@ -1700,20 +1729,20 @@ try {
       } else {
         log.error(`Failed ✗\n`);
       }
-      
+
       await delay(1000);
     }
   }
 
   // ============= RETURN TO DASHBOARD =============
   log.section("🏠 RETURNING TO DASHBOARD");
-  
+
   if (IS_LOCAL) {
     await navigateToPage(page, 'dashboard');
   } else {
     await navigateToURL(page, URLS.production.dashboard, 'dashboard');
   }
-  
+
   await delay(1000);
   log.success("Back on dashboard");
 
@@ -1721,9 +1750,9 @@ try {
   stats.endTime = Date.now();
   const endTimestamp = getCurrentTimestamp();
   const duration = stats.endTime - stats.startTime;
-  
+
   log.section("🎉 FEEDBACK SUBMISSION COMPLETE");
-  
+
   console.log(`
   ⏱️  TIMING INFORMATION
   ${"-".repeat(70)}
@@ -1745,7 +1774,7 @@ try {
   • Teaching & Learning:      ${Object.keys(teachingMap).length} configured
   ${"-".repeat(70)}
   `);
-  
+
   // Show missing env data
   if (stats.missingEnvData.length > 0) {
     console.log(`\n  ⚠️  MISSING ENVIRONMENT DATA (${stats.missingEnvData.length} items)`);
@@ -1755,7 +1784,7 @@ try {
     });
     console.log(`  ${"-".repeat(68)}`);
   }
-  
+
   // Show skipped items
   if (stats.skippedItems.length > 0) {
     console.log(`\n  ⏭️  SKIPPED ITEMS (${stats.skippedItems.length} items)`);
@@ -1765,7 +1794,7 @@ try {
     });
     console.log(`  ${"-".repeat(68)}`);
   }
-  
+
   // Show duplicate attempts
   if (stats.duplicateAttempts.length > 0) {
     console.log(`\n  🔄 DUPLICATE FEEDBACK DETECTED (${stats.duplicateAttempts.length} items)`);
@@ -1776,7 +1805,7 @@ try {
     });
     console.log(`  ${"-".repeat(68)}`);
   }
-  
+
   // Show available subjects not in .env
   if (missingTheorySubjects.length > 0) {
     console.log(`\n  📚 AVAILABLE SUBJECTS NOT IN .env (${missingTheorySubjects.length} theory subjects)`);
@@ -1787,16 +1816,16 @@ try {
     });
     console.log(`  ${"-".repeat(68)}`);
   }
-  
+
   console.log(`\n${"=".repeat(70)}\n`);
-  
+
   log.success("✅ Bot execution completed successfully!");
   log.info("🌐 Browser will remain open for 5 seconds for verification");
   log.info("📊 Check the page for submitted responses\n");
-  
+
   // Wait before closing
   await delay(5000);
-  
+
   // Close browser in production mode
   if (!IS_LOCAL) {
     log.info("🔒 Closing browser...");
@@ -1820,33 +1849,33 @@ try {
 
   // Display welcome banner
   displayWelcomeBanner();
-  
+
   // Get user confirmation
   const shouldStart = await getUserConfirmation();
-  
+
   if (!shouldStart) {
     console.log("\n" + colors.red + "❌ Operation cancelled by user." + colors.reset);
     console.log(colors.cyan + "👋 Thanks for using Feedback Bot. Goodbye!" + colors.reset + "\n");
     process.exit(0);
   }
-  
+
   console.log("\n" + colors.green + colors.bright + "✅ Starting feedback automation..." + colors.reset + "\n");
-  
+
   // Start the bot
   run().catch(err => {
     stats.endTime = Date.now();
     const endTimestamp = getCurrentTimestamp();
     const duration = stats.endTime - stats.startTime;
-    
+
     log.section("💥 FATAL ERROR OCCURRED");
     log.error(`Error Message: ${err.message}`);
-    
+
     if (stats.startTime) {
       log.time(`Started at: ${getCurrentTimestamp()}`);
       log.time(`Failed at: ${endTimestamp}`);
       log.time(`Duration before failure: ${formatDuration(duration)}`);
     }
-    
+
     console.error("\n📋 Stack Trace:");
     console.error(err.stack);
     console.log("\n" + "=".repeat(70) + "\n");
