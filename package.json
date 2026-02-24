@@ -7,11 +7,19 @@
   "scripts": {
     "start": "node index.js"
   },
-  "keywords": ["iul", "feedback", "automation", "puppeteer", "bot"],
+  "keywords": [
+    "iul",
+    "feedback",
+    "automation",
+    "puppeteer",
+    "bot"
+  ],
   "author": "CHACHA0044",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.2.3",
-    "puppeteer": "^24.27.0"
+    "puppeteer": "^24.27.0",
+    "sharp": "^0.34.5",
+    "tesseract.js": "^7.0.0"
   }
 }
