@@ -5,6 +5,13 @@ Tired of filling endless feedback forms? Let this bot do it for you automaticall
 
 📘 **Refer to [this link](https://drive.google.com/file/d/1n_JXNliyj0Nkn2cihvfX0Vd6b8CFk6yZ/view?usp=sharing)** to get a refrence of how the bot works.
 
+## ✅ Last Verified Working
+**Worked when used on:** `6 Nov 2025`
+
+> **Note:**  
+> If the bot worked successfully for you, please update this date by sending a pull request.
+
+
 ## ✨ Features
 
 - ✅ Automated Theory Subject Feedback
