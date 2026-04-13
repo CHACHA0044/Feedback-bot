@@ -92,7 +92,8 @@
 .statusPulse {
   width: 6px;
   height: 6px;
-  background: var(--secondary);
+  background: var(--primary); /* Switched to gold */
   border-radius: 50%;
+  box-shadow: 0 0 8px var(--primary);
   animation: pulse 2s infinite;
 }

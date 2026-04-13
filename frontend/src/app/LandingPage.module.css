@@ -24,15 +24,15 @@
 }
 
 .botBadge {
-  background: rgba(0, 255, 136, 0.1);
-  color: var(--secondary);
+  background: rgba(255, 215, 0, 0.1); /* Gold background */
+  color: #ffffff; /* System Status text will be white as per request */
   padding: 0.5rem 1rem;
   border-radius: 100px;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 1px;
   margin-bottom: 2rem;
-  border: 1px solid rgba(0, 255, 136, 0.2);
+  border: 1px solid rgba(255, 215, 0, 0.3); /* Gold border */
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -128,10 +128,11 @@
 .featuresGrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 2rem;
-  margin-top: 4rem;
+  gap: 1.5rem; /* Slightly more space for the persistent borders */
+  margin: 4rem auto; /* Centered */
   width: 100%;
-  max-width: 1200px;
+  max-width: 900px; /* More compact grid */
+  justify-items: center;
 }
 
 @media (max-width: 1024px) {
@@ -149,6 +150,9 @@
 .featureCardWrapper {
   border-radius: 20px;
   overflow: visible;
+  width: 100%;
+  max-width: 250px; /* Reduced from 280px */
+  aspect-ratio: 1 / 1;
 }
 
 .featureCardWrapper :global(.eb-canvas-container),
@@ -163,8 +167,8 @@
 }
 
 .featureCard {
-  padding: 2.5rem;
-  text-align: left;
+  padding: 1.5rem;
+  text-align: center;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   position: relative;
@@ -172,10 +176,14 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: #0f0f0f; /* More solid background */
   backdrop-filter: blur(10px);
-  height: 320px; /* Slightly taller for more content */
+  width: 100%;
+  aspect-ratio: 1 / 1;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(255, 215, 0, 0.05); /* Better shadows and inner glow */
+  justify-content: center; /* Center content vertically */
+  align-items: center; /* Center content horizontally */
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.2); /* Enhanced yellow glow */
   will-change: transform, border-color, box-shadow;
 }
 
@@ -310,4 +318,18 @@
 
 .closeBtn:hover {
   color: #fff;
+}
+
+.dot {
+  display: inline-block;
+  animation: dotPulse 1.5s infinite;
+}
+
+.dot:nth-child(1) { animation-delay: 0s; }
+.dot:nth-child(2) { animation-delay: 0.3s; }
+.dot:nth-child(3) { animation-delay: 0.6s; }
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 0.2; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
 }
