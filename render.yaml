@@ -18,3 +18,5 @@ services:
         sync: false
       - key: ENVIRONMENT
         value: production
+      - key: FRONTEND_URL
+        value: https://feedback-bot-delta.vercel.app/
