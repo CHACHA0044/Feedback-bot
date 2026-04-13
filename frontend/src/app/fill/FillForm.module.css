@@ -6,16 +6,17 @@
 }
 
 .header {
-  margin-bottom: 3rem;
-  text-align: left;
+  margin-bottom: 4rem;
+  text-align: center;
 }
 
 .title {
-  font-family: var(--font-space-grotesk);
-  font-size: 2.5rem;
-  font-weight: 700;
+  font-family: var(--font-robotic);
+  font-size: 3rem;
+  font-weight: 800;
   color: var(--primary);
-  margin-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  text-shadow: 0 0 20px var(--primary-glow);
 }
 
 .subtitle {
@@ -33,6 +34,14 @@
   padding: 2.5rem;
   position: relative;
   overflow: hidden;
+  transition: all 0.5s ease;
+  opacity: 0;
+  transform: translateY(30px);
+}
+
+.sectionVisible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .section::before {

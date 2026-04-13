@@ -2,22 +2,96 @@
 
 import Link from "next/link";
 import styles from "./LandingPage.module.css";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import ElectricBorder from "@/components/ElectricBorder";
+
+interface Feature {
+  title: string;
+  icon: string;
+  description: string;
+  detail: string;
+}
+
+const features: Feature[] = [
+  {
+    title: "Theory Automation",
+    icon: "⚡",
+    description: "Automatically fills theory subject forms with specific teacher mappings.",
+    detail: "The bot parses your theory subjects and teachers from the configuration, navigates to the IUSMS theory feedback portal, and fills all 20+ questions per subject in seconds."
+  },
+  {
+    title: "Lab Feedback",
+    icon: "🔬",
+    description: "Handles lab subject reports and evaluations with precision.",
+    detail: "Supports dual-teacher mapping for labs. It ensures that both primary and secondary instructors receive the correct feedback criteria as per your sentiment bias."
+  },
+  {
+    title: "Mentor Directive",
+    icon: "🛡️",
+    description: "Single-click automation for mentor sessions and reviews.",
+    detail: "Navigates to the specialized Mentor Feedback section, identifying your specified department and mentor name to complete evaluations without manual clicking."
+  },
+  {
+    title: "Smart Skip",
+    icon: "⏭️",
+    description: "Intelligently skips forms that have already been submitted.",
+    detail: "Bot detects 'Already Submitted' alerts from the portal and skips the entry, preventing redundant work and keeping your logs clean."
+  },
+  {
+    title: "Duplicate Detection",
+    icon: "🔍",
+    description: "Robust checking to prevent multiple submissions for the same criteria.",
+    detail: "Before submission, the bot checks its internal execution state to ensure no subject is processed twice, saving network bandwidth and time."
+  },
+  {
+    title: "Manual Captcha",
+    icon: "🧩",
+    description: "Integrated bridge for the critical IUSMS security step.",
+    detail: "The bot pauses execution at the login stage, allowing you to solve the CAPTCHA in the terminal view or browser, then resumes automation immediately."
+  }
+];
 
 export default function LandingPage() {
   const [mounted, setMounted] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setMounted(true);
+    
+    // Intersection Observer for scroll-in animations
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('animate-fade-in');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+
+    const animatedElements = document.querySelectorAll('.scroll-animate');
+    animatedElements.forEach(el => observer.observe(el));
+
+    return () => observer.disconnect();
   }, []);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>, index: number) => {
+    const card = e.currentTarget;
+    const rect = card.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    card.style.setProperty('--mouse-x', `${x}%`);
+    card.style.setProperty('--mouse-y', `${y}%`);
+  };
 
   if (!mounted) return null;
 
   return (
-    <div className={styles.container}>
-      <section className={`${styles.hero} animate-fade-in`}>
+    <div className={styles.container} ref={containerRef}>
+      <section className={`${styles.hero} scroll-animate`}>
         <div className={styles.botBadge}>
-          <span className="animate-pulse">●</span> BOT STATUS: ONLINE
+          <span className="animate-pulse" style={{ background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }}></span> 
+          SYSTEM STATUS: OPTIMIZED
         </div>
         <h1 className={styles.title}>
           Automate Your <br />
@@ -29,19 +103,47 @@ export default function LandingPage() {
         </p>
         
         <div className={styles.ctaWrapper}>
-          <Link href="/fill" className="btn-primary">
+          <Link href="/fill" className="btn-primary" style={{ padding: '1.2rem 3rem', fontSize: '1rem' }}>
             Fill Feedback
           </Link>
           <a href="#demo" className={styles.secondaryLink}>
-            Watch Demo
+            Systems Check
           </a>
         </div>
       </section>
 
-      <section id="demo" className={styles.howItWorks}>
-        <h2 className={styles.sectionTitle}>System Clearance</h2>
+      <section className={styles.featuresGrid}>
+        {features.map((feature, idx) => (
+          <div key={idx} className="scroll-animate" style={{ transitionDelay: `${idx * 0.1}s` }}>
+            <ElectricBorder
+              color="var(--primary)"
+              speed={1.5}
+              chaos={0.15}
+              borderRadius={20}
+              className={styles.featureCardWrapper} // We'll add a hover condition for this in CSS
+            >
+              <div 
+                className={`${styles.featureCard} glass`}
+                onMouseMove={(e) => handleMouseMove(e, idx)}
+                onClick={() => setSelectedFeature(feature)}
+              >
+                <div className={styles.mouseLight}></div>
+                <div className={styles.featureIcon}>{feature.icon}</div>
+                <h3 className={styles.featureTitle}>{feature.title}</h3>
+                <p className={styles.featureText}>{feature.description}</p>
+              </div>
+            </ElectricBorder>
+          </div>
+        ))}
+      </section>
+
+      <div style={{ width: '100%', maxWidth: '1000px', margin: '6rem auto 2rem' }}>
+        <h2 className={styles.sectionTitle} style={{ textAlign: 'center' }}>System Clearance</h2>
+        <p className={styles.subtext} style={{ textAlign: 'center' }}>(older gitbash version)</p>
+      </div>
+
+      <section id="demo" className={`${styles.howItWorks} scroll-animate`}>
         <div className={styles.videoContainer}>
-          {/* Note: Google Drive videos often need a special embed URL structure */}
           <iframe 
             src="https://drive.google.com/file/d/1n_JXNliyj0Nkn2cihvfX0Vd6b8CFk6yZ/preview" 
             allow="autoplay"
@@ -50,27 +152,25 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className={styles.featuresGrid}>
-        <div className={`${styles.featureCard} glass`}>
-          <div className={styles.featureIcon}>⚡</div>
-          <h3 className={styles.featureTitle}>Hyper Fast</h3>
-          <p className={styles.featureText}>Process multi-subject feedback in parallel timestamps. Minutes to seconds.</p>
-        </div>
-        <div className={`${styles.featureCard} glass`}>
-          <div className={styles.featureIcon}>🛡️</div>
-          <h3 className={styles.featureTitle}>Smart Skip</h3>
-          <p className={styles.featureText}>Automatically detects and bypasses already submitted feedback forms.</p>
-        </div>
-        <div className={`${styles.featureCard} glass`}>
-          <div className={styles.featureIcon}>🛠️</div>
-          <h3 className={styles.featureTitle}>Dual Logic</h3>
-          <p className={styles.featureText}>Handles both Theory and Lab sessions with separate teacher mappings.</p>
-        </div>
-      </section>
-
       <footer className={styles.footer}>
         <p>&copy; {new Date().getFullYear()} FEEDBACK-BOT.V2. MISSION READY.</p>
+        <p style={{ marginTop: '0.5rem', opacity: 0.5 }}>AUTONOMOUS FEEDBACK PROTOCOL ENABLED.</p>
       </footer>
+
+      {/* Feature Detail Modal */}
+      {selectedFeature && (
+        <div className={styles.modalOverlay} onClick={() => setSelectedFeature(null)}>
+          <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
+            <button className={styles.closeBtn} onClick={() => setSelectedFeature(null)}>&times;</button>
+            <div className={styles.featureIcon} style={{ fontSize: '3rem' }}>{selectedFeature.icon}</div>
+            <h2 className={styles.modalTitle}>{selectedFeature.title}</h2>
+            <p className={styles.modalText}>{selectedFeature.detail}</p>
+            <div style={{ marginTop: '2rem' }}>
+              <button className="btn-primary" onClick={() => setSelectedFeature(null)}>Acknowledge</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
