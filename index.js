@@ -3,6 +3,14 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import readline from "readline";
+import express from "express";
+import cors from "cors";
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
 
 dotenv.config();
 
@@ -100,6 +108,11 @@ async function getUserConfirmation() {
  * @param {string} message - The message to display to the user.
  */
 async function waitForEnter(message) {
+  if (!IS_LOCAL) {
+    log.info(`Bypassing manual wait in production: ${message}`);
+    return Promise.resolve();
+  }
+
   const colors = {
     reset: '\x1b[0m',
     bright: '\x1b[1m',
@@ -1836,8 +1849,32 @@ async function run() {
   }
 }
 
+// ============= WEB SERVER ENDPOINTS =============
+app.get("/", (req, res) => {
+  res.send({ status: "ok", message: "Feedback Bot Backend is running" });
+});
+
+app.post("/api/execute", async (req, res) => {
+  log.section("🚀 API EXECUTION TRIGGERED");
+  
+  if (stats.startTime) {
+    return res.status(400).send({ status: "error", message: "Bot is already running" });
+  }
+
+  // Run the bot in the background
+  run().catch(err => {
+    log.error(`API Runtime error: ${err.message}`);
+  });
+
+  res.send({ 
+    status: "success", 
+    message: "Feedback automation protocol initiated.",
+    timestamp: getCurrentTimestamp()
+  });
+});
+
 // ============= MAIN ENTRY POINT =============
-(async function main() {
+async function startServer() {
   const colors = {
     reset: '\x1b[0m',
     bright: '\x1b[1m',
@@ -1850,30 +1887,34 @@ async function run() {
   // Display welcome banner
   displayWelcomeBanner();
 
-  // Get user confirmation
-  const shouldStart = await getUserConfirmation();
-
-  if (!shouldStart) {
-    console.log("\n" + colors.red + "❌ Operation cancelled by user." + colors.reset);
-    console.log(colors.cyan + "👋 Thanks for using Feedback Bot. Goodbye!" + colors.reset + "\n");
-    process.exit(0);
+  if (IS_LOCAL) {
+    // Get user confirmation in local mode
+    const shouldStart = await getUserConfirmation();
+    if (!shouldStart) {
+      console.log("\n" + colors.red + "❌ Operation cancelled by user." + colors.reset);
+      process.exit(0);
+    }
+    console.log("\n" + colors.green + colors.bright + "✅ Starting feedback automation..." + colors.reset + "\n");
+    run().catch(err => log.error(err.message));
+  } else {
+    // Production mode - start the web server
+    app.listen(PORT, () => {
+      console.log("\n" + colors.green + colors.bright + `🚀 Production Server running on port ${PORT}` + colors.reset);
+      console.log(colors.cyan + "Waiting for API triggers..." + colors.reset + "\n");
+    });
   }
+}
 
-  console.log("\n" + colors.green + colors.bright + "✅ Starting feedback automation..." + colors.reset + "\n");
+startServer();
 
-  // Start the bot
-  run().catch(err => {
-    stats.endTime = Date.now();
-    const endTimestamp = getCurrentTimestamp();
-    const duration = stats.endTime - stats.startTime;
-
+// Error handler for the main process
+process.on('uncaughtException', (err) => {
     log.section("💥 FATAL ERROR OCCURRED");
     log.error(`Error Message: ${err.message}`);
 
     if (stats.startTime) {
       log.time(`Started at: ${getCurrentTimestamp()}`);
-      log.time(`Failed at: ${endTimestamp}`);
-      log.time(`Duration before failure: ${formatDuration(duration)}`);
+      log.time(`Failed at: ${getCurrentTimestamp()}`);
     }
 
     console.error("\n📋 Stack Trace:");
@@ -1881,4 +1922,3 @@ async function run() {
     console.log("\n" + "=".repeat(70) + "\n");
     process.exit(1);
   });
-})();
