@@ -6,6 +6,7 @@ import readline from "readline";
 import express from "express";
 import cors from "cors";
 
+const app = express();
 const FRONTEND_URL = (process.env.FRONTEND_URL || '').replace(/\/$/, "");
 
 app.use(cors({
