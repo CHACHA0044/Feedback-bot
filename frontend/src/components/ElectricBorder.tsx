@@ -170,11 +170,11 @@ const ElectricBorder = ({
       const width = Math.floor(rect.width) + borderOffset * 2;
       const height = Math.floor(rect.height) + borderOffset * 2;
 
-      const dpr = 2; // Fixed DPR for stability
+      const dpr = 2;
       canvas.width = width * dpr;
       canvas.height = height * dpr;
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
+      // Do not set styles here to avoid conflicts with fixed CSS
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
 
       return { width, height };
