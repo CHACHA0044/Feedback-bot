@@ -6,9 +6,10 @@ import readline from "readline";
 import express from "express";
 import cors from "cors";
 
-const app = express();
+const FRONTEND_URL = (process.env.FRONTEND_URL || '').replace(/\/$/, "");
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: [FRONTEND_URL, FRONTEND_URL + "/", 'https://feedback-bot-delta.vercel.app'],
   methods: ['GET', 'POST'],
   credentials: true
 }));
@@ -2002,8 +2003,9 @@ async function startServer() {
     red: '\x1b[31m'
   };
 
-  // Display welcome banner
-  displayWelcomeBanner();
+  if (IS_LOCAL) {
+    displayWelcomeBanner();
+  }
 
   if (IS_LOCAL) {
     // Get user confirmation in local mode
@@ -2015,10 +2017,9 @@ async function startServer() {
     console.log("\n" + colors.green + colors.bright + "✅ Starting feedback automation..." + colors.reset + "\n");
     run().catch(err => log.error(err.message));
   } else {
-    // Production mode - start the web server
     app.listen(PORT, () => {
-      console.log("\n" + colors.green + colors.bright + `🚀 Production Server running on port ${PORT}` + colors.reset);
-      console.log(colors.cyan + "Waiting for API triggers..." + colors.reset + "\n");
+      console.log(`🚀 Production Server running on port ${PORT}`);
+      console.log(`📡 Uplink Authorized: ${FRONTEND_URL}`);
     });
   }
 }
