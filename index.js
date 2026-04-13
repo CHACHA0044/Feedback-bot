@@ -22,6 +22,7 @@ const PORT = process.env.PORT || 3000;
 let sseClients = [];
 let activePage = null; // Store handle for remote interaction
 let activeBrowser = null;
+let isPaused = false; // Global pause flag
 
 function broadcast(data) {
   const payload = JSON.stringify(data);
@@ -371,7 +372,14 @@ logMethods.forEach(method => {
 
 // ============= UTILITY FUNCTIONS =============
 async function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (isPaused) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      continue;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
 }
 
 function formatDuration(ms) {
@@ -2017,6 +2025,32 @@ app.post("/api/interact", async (req, res) => {
   } catch (err) {
     res.status(500).send({ status: "error", message: err.message });
   }
+});
+
+app.post("/api/pause", (req, res) => {
+  isPaused = !isPaused;
+  log.info(`Protocol ${isPaused ? 'PAUSED' : 'RESUMED'} by user command`);
+  broadcast({ type: 'status_update', msg: isPaused ? 'PROTOCOL_PAUSED' : 'PROTOCOL_RESUMED' });
+  res.send({ status: "success", isPaused });
+});
+
+app.post("/api/kill", async (req, res) => {
+  log.section("🛑 EMERGENCY KILL COMMAND RECEIVED");
+  broadcast({ type: 'status_update', msg: 'TERMINATING_ALL_PROCESSES' });
+  broadcast({ type: 'log', level: 'error', msg: '⚠️ EMERGENCY KILL: All operations halted by user.' });
+
+  try {
+    if (activeBrowser) {
+      await activeBrowser.close();
+    }
+  } catch (e) { }
+
+  activePage = null;
+  activeBrowser = null;
+  isPaused = false;
+  stats.startTime = null; 
+  
+  res.send({ status: "success", message: "Process terminated." });
 });
 
 app.get("/api/stream", (req, res) => {
