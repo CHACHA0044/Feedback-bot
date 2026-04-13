@@ -30,6 +30,7 @@ export default function FillPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [progress, setProgress] = useState(0);
   const [isCaptchaRequired, setIsCaptchaRequired] = useState(false);
+  const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -82,10 +83,33 @@ export default function FillPage() {
     setProgress(5);
     
     await delay(1000);
-    addLog("Contacting IUSMS Gateway (Render Backend)...", "action");
-    setProgress(15);
+    addLog("Connecting to Mission Control stream...", "action");
     
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    
+    // Connect to the log/screenshot stream first
+    const eventSource = new EventSource(`${backendUrl}/api/stream`);
+    
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'log') {
+        addLog(data.msg, data.level);
+        if (data.msg.includes(" MISSION ACCOMPLISHED") || data.msg.includes("completed successfully")) {
+          setStep('done');
+          eventSource.close();
+        }
+      } else if (data.type === 'screenshot') {
+        setLiveScreenshot(data.data);
+      } else if (data.type === 'captcha_required') {
+        setIsCaptchaRequired(true);
+      }
+    };
+
+    eventSource.onerror = () => {
+      addLog("Stream connection lost. Retrying...", "error");
+    };
+
+    setProgress(15);
     
     try {
       const response = await fetch(`${backendUrl}/api/execute`, {
@@ -100,70 +124,28 @@ export default function FillPage() {
 
       if (response.ok) {
         addLog(`Protocol initiated: ${data.message}`, "success");
-        addLog("Injecting credentials into remote browser...", "info");
         setProgress(30);
-        
-        await delay(2000);
-        setIsCaptchaRequired(true);
-        addLog("SECURITY INTERCEPT: Manual CAPTCHA verify required.", "error");
-        addLog("Solve the CAPTCHA in your IUSMS window (Render Environment).", "info");
       } else {
         addLog(`Uplink Failed: ${data.message}`, "error");
+        eventSource.close();
         setStep('form');
       }
     } catch (err) {
       addLog(`Critical Connection Error: ${err instanceof Error ? err.message : 'Unknown Error'}`, "error");
-      addLog("Ensure your Render backend is running and CORS is configured.", "error");
+      eventSource.close();
       setStep('form');
     }
   };
 
   const handleCaptchaSolved = async () => {
-    setIsCaptchaRequired(false);
-    addLog("CAPTCHA identity verified.", "success");
-    addLog("Login sequence complete. Session established.", "success");
-    setProgress(45);
-
-    await executionLoop();
-  };
-
-  const executionLoop = async () => {
-    const sections = [
-      { name: "Theory Feedback", subjects: formData.theoryCodes.split(',') },
-      { name: "Lab Feedback", subjects: formData.labCodes.split(',') },
-      { name: "Mentor Feedback", subjects: [formData.mentorName] },
-      { name: "Teaching & Learning", subjects: formData.teachingCodes.split(',') }
-    ];
-    
-    for (const section of sections) {
-      if (!section.subjects[0] || section.subjects[0] === "") continue;
-      
-      addLog(`Initializing ${section.name} sequence...`, "action");
-      await delay(1000);
-      
-      for (const subject of section.subjects) {
-        const sub = subject.trim();
-        if (!sub) continue;
-        
-        addLog(`Navigating to ${section.name} portal...`, "info");
-        await delay(800);
-        addLog(`Searching for subject: "${sub}"`, "info");
-        await delay(500);
-        addLog(`Found "${sub}". Injecting sentiment: ${formData.feedbackOption}`, "info");
-        await delay(1000);
-        addLog(`✓ Server response: "Data submitted successfully!"`, "success");
-        setProgress(prev => Math.min(prev + (50 / 8), 95));
-      }
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      await fetch(`${backendUrl}/api/resume`, { method: 'POST' });
+      setIsCaptchaRequired(false);
+      addLog("User signal received. Proceeding...", "success");
+    } catch (err) {
+      addLog("Failed to send resume signal.", "error");
     }
-
-    addLog("Verification sequence complete.", "success");
-    addLog("Closing secure uplink...", "info");
-    await delay(1000);
-    setProgress(100);
-    addLog("MISSION ACCOMPLISHED. SYSTEM IDLE.", "success");
-    
-    await delay(2000);
-    setStep('done');
   };
 
   const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
@@ -368,7 +350,7 @@ export default function FillPage() {
         <div className={styles.executionPanel}>
           <div className={`${styles.progressWrapper} glass`}>
             <div className={styles.progressInfo}>
-              <span>EXECUTION PROGRESS</span>
+              <span>REMOTE UPLINK ESTABLISHED</span>
               <span>{Math.round(progress)}%</span>
             </div>
             <div className={styles.progressBar}>
@@ -379,39 +361,50 @@ export default function FillPage() {
             </div>
           </div>
 
-          <div className={styles.browserView}>
-            {isCaptchaRequired ? (
-              <div className={styles.captchaPrompt}>
-                <h3 style={{ color: 'var(--primary)', marginBottom: '1rem' }}>ACTION REQUIRED</h3>
-                <p style={{ marginBottom: '1.5rem', fontSize: '0.9rem' }}>Manual CAPTCHA verification detected. Solve it in the IUSMS window.</p>
-                <button 
-                  className="btn-primary" 
-                  style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}
-                  onClick={handleCaptchaSolved}
-                >
-                  I've Solved IT
-                </button>
-              </div>
-            ) : (
-              <div style={{ color: '#333', fontSize: '0.8rem', letterSpacing: '4px' }}>
-                {progress === 100 ? "UPLINK CLOSED" : "STREAMING_DATA..."}
-              </div>
-            )}
-          </div>
+          <div className={styles.dashboardGrid}>
+            <div className={styles.logStream}>
+              {logs.map(log => (
+                <div key={log.id} className={styles.logEntry}>
+                  <span className={styles.logTime}>[{log.time}]</span>
+                  <span className={`${styles.logMsg} ${styles[log.type]}`}>
+                    {log.type === 'action' && '▶ '}
+                    {log.type === 'success' && '✓ '}
+                    {log.type === 'error' && '⚠ '}
+                    {log.msg}
+                  </span>
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
 
-          <div className={styles.logStream}>
-            {logs.map(log => (
-              <div key={log.id} className={styles.logEntry}>
-                <span className={styles.logTime}>[{log.time}]</span>
-                <span className={`${styles.logMsg} ${styles[log.type]}`}>
-                  {log.type === 'action' && '▶ '}
-                  {log.type === 'success' && '✓ '}
-                  {log.type === 'error' && '⚠ '}
-                  {log.msg}
-                </span>
-              </div>
-            ))}
-            <div ref={logEndRef} />
+            <div className={styles.browserView}>
+              <div className={styles.liveOverlay}>LIVE_REMOTE_VIEW</div>
+              {liveScreenshot ? (
+                <img 
+                  src={liveScreenshot} 
+                  alt="Remote View" 
+                  className={styles.liveViewImage}
+                />
+              ) : (
+                <div style={{ color: '#333', fontSize: '0.8rem', letterSpacing: '4px' }}>
+                  WAITING_FOR_DATA_STREAM...
+                </div>
+              )}
+
+              {isCaptchaRequired && (
+                <div className={styles.captchaPrompt}>
+                  <h3 style={{ color: 'var(--primary)', marginBottom: '1rem' }}>ACTION REQUIRED</h3>
+                  <p style={{ marginBottom: '1.5rem', fontSize: '0.9rem' }}>Solve CAPTCHA in remote window.</p>
+                  <button 
+                    className="btn-primary" 
+                    style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}
+                    onClick={handleCaptchaSolved}
+                  >
+                    I've Solved IT
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

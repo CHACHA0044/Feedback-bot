@@ -16,6 +16,17 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+// ============= SSE LOGGING SYSTEM =============
+let sseClients = [];
+
+function broadcast(data) {
+  const payload = JSON.stringify(data);
+  sseClients.forEach(client => client.res.write(`data: ${payload}\n\n`));
+}
+
+// Intercept log object to broadcast to SSE
+const originalLog = { ...log }; // We will update the log object after its definition
+
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -111,10 +122,18 @@ async function getUserConfirmation() {
  * Pauses execution and waits for user to press ENTER in terminal.
  * @param {string} message - The message to display to the user.
  */
+// Global Resolver for production manual steps
+let resumeResolve = null;
+
 async function waitForEnter(message) {
   if (!IS_LOCAL) {
-    log.info(`Bypassing manual wait in production: ${message}`);
-    return Promise.resolve();
+    log.section("🧩 REMOTE ACTION REQUIRED");
+    log.info(message);
+    broadcast({ type: 'captcha_required' });
+    
+    return new Promise(resolve => {
+      resumeResolve = resolve;
+    });
   }
 
   const colors = {
@@ -299,8 +318,23 @@ const log = {
   time: (text, indent = 1) => {
     const prefix = "  ".repeat(indent);
     console.log(`${prefix}⏱️  ${text}`);
+    broadcast({ type: 'log', level: 'info', msg: text });
   }
 };
+
+// Update log methods to broadcast
+const logMethods = ['info', 'success', 'error', 'warning', 'action', 'detail', 'scroll', 'skip', 'time'];
+logMethods.forEach(method => {
+  const original = log[method];
+  log[method] = (text, indent = 1) => {
+    original(text, indent);
+    broadcast({ 
+      type: 'log', 
+      level: method === 'error' ? 'error' : (method === 'success' ? 'success' : (method === 'action' ? 'action' : 'info')), 
+      msg: text 
+    });
+  };
+});
 
 // ============= UTILITY FUNCTIONS =============
 async function delay(ms) {
@@ -1533,6 +1567,24 @@ async function run(inputConfig = {}) {
   handleNetworkErrors(page);
   log.success("Browser launched successfully");
 
+  // Screenshot broadcasting loop
+  const screenshotInterval = setInterval(async () => {
+    try {
+      if (browser.isConnected() && !page.isClosed()) {
+        const screenshot = await page.screenshot({ 
+          encoding: 'base64',
+          type: 'jpeg',
+          quality: 30 // Low quality for speed
+        });
+        broadcast({ type: 'screenshot', data: `data:image/jpeg;base64,${screenshot}` });
+      } else {
+        clearInterval(screenshotInterval);
+      }
+    } catch (e) {
+      clearInterval(screenshotInterval);
+    }
+  }, 1500); // Send screenshot every 1.5 seconds
+
   // ============= LOGIN =============
   log.section("🔐 AUTHENTICATION");
 
@@ -1540,6 +1592,21 @@ async function run(inputConfig = {}) {
   log.detail(`URL: ${loginUrl}`);
   await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
   await delay(800);
+  
+  // Detect IUSMS Server Error
+  const serverErrorDetected = await page.evaluate(() => {
+    const text = document.body.innerText;
+    return text.includes("Unable to connect to server") || text.includes("Server Error");
+  });
+
+  if (serverErrorDetected) {
+    log.error("SYSTEM ALERT: IUSMS Server is currently unresponsive (Unable to connect to server).");
+    log.info("This is an official IUSMS error. Please try again later.");
+    await browser.close();
+    clearInterval(screenshotInterval);
+    return;
+  }
+
   log.success("Login page loaded");
 
   log.action("Entering credentials...");
@@ -1877,8 +1944,34 @@ async function run(inputConfig = {}) {
 }
 
 // ============= WEB SERVER ENDPOINTS =============
-app.get("/", (req, res) => {
-  res.send({ status: "ok", message: "Feedback Bot Backend is running" });
+app.post("/api/resume", (req, res) => {
+  if (resumeResolve) {
+    log.success("User signaled protocol resumption ✓");
+    resumeResolve();
+    resumeResolve = null;
+    res.send({ status: "success", message: "Resuming..." });
+  } else {
+    res.status(400).send({ status: "error", message: "No pending action required" });
+  }
+});
+
+app.get("/api/stream", (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+  });
+
+  const clientId = Date.now();
+  const newClient = { id: clientId, res };
+  sseClients.push(newClient);
+
+  log.info(`Remote client connected to stream [${clientId}]`);
+
+  req.on("close", () => {
+    sseClients = sseClients.filter(c => c.id !== clientId);
+    log.info(`Remote client disconnected [${clientId}]`);
+  });
 });
 
 app.post("/api/execute", async (req, res) => {
@@ -1888,10 +1981,11 @@ app.post("/api/execute", async (req, res) => {
     return res.status(400).send({ status: "error", message: "Bot is already running" });
   }
 
-  // Run the bot in the background with frontend inputs
-  run(req.body).catch(err => {
-    log.error(`API Runtime error: ${err.message}`);
-  });
+    // Run the bot in the background with frontend inputs
+    run(req.body).catch(err => {
+      log.error(`API Runtime error: ${err.message}`);
+      broadcast({ type: 'log', level: 'error', msg: `Fatal Backend Error: ${err.message}` });
+    });
 
   res.send({ 
     status: "success", 
