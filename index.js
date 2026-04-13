@@ -1533,15 +1533,17 @@ async function run(inputConfig = {}) {
 
   log.section("🌐 LAUNCHING BROWSER");
   const browser = await puppeteer.launch({
-    headless: false,
-    slowMo: 30,
+    headless: IS_LOCAL ? false : "new",
+    slowMo: IS_LOCAL ? 30 : 0,
     args: [
       '--start-maximized',
       '--disable-blink-features=AutomationControlled',
       '--disable-web-security',
-      '--disable-features=IsolateOrigins,site-per-process'
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--no-sandbox',
+      '--disable-setuid-sandbox'
     ],
-    defaultViewport: null
+    defaultViewport: IS_LOCAL ? null : { width: 1280, height: 800 }
   });
 
   const page = await browser.newPage();
