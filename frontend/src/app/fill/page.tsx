@@ -169,13 +169,13 @@ export default function FillPage() {
         setProgress(30);
       } else {
         addLog(`Uplink Failed: ${data.message}`, "error");
+        addLog("Mission aborted. Use the button below to return to config.", "info");
         eventSource.close();
-        setStep('form');
       }
     } catch (err) {
       addLog(`Critical Connection Error: ${err instanceof Error ? err.message : 'Unknown Error'}`, "error");
+      addLog("Network uplink severed. Check backend status.", "info");
       eventSource.close();
-      setStep('form');
     }
   };
 
@@ -482,6 +482,16 @@ export default function FillPage() {
                 </div>
               ))}
               <div ref={logEndRef} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+              <button 
+                className="btn-primary" 
+                style={{ padding: '0.8rem 2rem', opacity: 0.8 }}
+                onClick={() => setStep('form')}
+              >
+                RETURN TO CONFIG
+              </button>
             </div>
           </div>
         </div>
