@@ -13,6 +13,7 @@
   --font-geist-sans: "Geist", sans-serif;
   --font-geist-mono: "Geist Mono", monospace;
   --font-robotic: "Orbitron", sans-serif;
+  --font-custom: "Frijole", cursive;
 }
 
 @font-face {
@@ -20,10 +21,23 @@
   src: url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
 }
 
+@font-face {
+  font-family: 'Frijole';
+  src: url('https://fonts.googleapis.com/css2?family=Frijole&display=swap');
+}
+
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-robotic);
+  font-family: var(--font-custom);
   text-transform: uppercase;
   letter-spacing: 2px;
+}
+
+.font-robotic {
+  font-family: var(--font-robotic);
+}
+
+.font-frijole {
+  font-family: var(--font-custom);
 }
 
 * {
@@ -158,6 +172,16 @@ main {
   position: relative;
   overflow: hidden;
   box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+  width: auto;
+  max-width: 100%;
+}
+
+@media (max-width: 600px) {
+  .btn-primary {
+    width: 100%;
+    padding: 1rem;
+    font-size: 0.9rem;
+  }
 }
 
 .btn-primary:hover {

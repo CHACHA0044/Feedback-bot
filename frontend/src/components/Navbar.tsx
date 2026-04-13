@@ -10,7 +10,10 @@ export default function Navbar() {
   return (
     <nav className={styles.nav}>
       <Link href="/" className={styles.logo}>
-        <span className={styles.logoDot}></span> FEEDBACK<span className={styles.logoAlt}>BOT</span>
+        <span className={styles.logoDot}></span> 
+        <span className={styles.fullText}>FEEDBACK</span>
+        <span className={styles.shortText}>FB</span>
+        <span className={styles.logoAlt}>BOT</span>
       </Link>
       <div className={styles.links}>
         <Link 

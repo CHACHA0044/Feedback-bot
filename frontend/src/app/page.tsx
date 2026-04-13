@@ -94,8 +94,8 @@ export default function LandingPage() {
           SYSTEM STATUS: OPTIMIZED
         </div>
         <h1 className={styles.title}>
-          Automate Your <br />
-          <span className="text-glow">IUSMS Feedback</span>
+          <span className={styles.titlePart1}>Automate Your</span> <br />
+          <span className={styles.titlePart2}>IUSMS Feedback</span>
         </h1>
         <p className={styles.subtitle}>
           The futuristic automation engine that skips the boredom. 
@@ -116,11 +116,11 @@ export default function LandingPage() {
         {features.map((feature, idx) => (
           <div key={idx} className="scroll-animate" style={{ transitionDelay: `${idx * 0.1}s` }}>
             <ElectricBorder
-              color="var(--primary)"
+              color="#ffffff" // White for better contrast
               speed={1.5}
               chaos={0.15}
               borderRadius={20}
-              className={styles.featureCardWrapper} // We'll add a hover condition for this in CSS
+              className={styles.featureCardWrapper}
             >
               <div 
                 className={`${styles.featureCard} glass`}

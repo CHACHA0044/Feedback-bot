@@ -24,6 +24,19 @@
   text-transform: uppercase;
 }
 
+.shortText {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .fullText {
+    display: none;
+  }
+  .shortText {
+    display: inline;
+  }
+}
+
 .logoDot {
   width: 8px;
   height: 8px;
