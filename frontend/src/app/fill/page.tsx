@@ -38,6 +38,24 @@ export default function FillPage() {
     }
   }, [logs]);
 
+  useEffect(() => {
+    // Intersection Observer for section scroll-in animations
+    if (step === 'form') {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add(styles.sectionVisible);
+          }
+        });
+      }, { threshold: 0.1 });
+
+      const sections = document.querySelectorAll(`.${styles.section}`);
+      sections.forEach(sec => observer.observe(sec));
+
+      return () => observer.disconnect();
+    }
+  }, [step]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -63,7 +81,6 @@ export default function FillPage() {
     addLog("System initialized. Establishing Uplink...", "action");
     setProgress(5);
     
-    // Simulate steps for demo
     await delay(1500);
     addLog("Contacting IUSMS Gateway...", "action");
     setProgress(15);
@@ -97,7 +114,7 @@ export default function FillPage() {
     ];
     
     for (const section of sections) {
-      if (!section.subjects[0]) continue;
+      if (!section.subjects[0] || section.subjects[0] === "") continue;
       
       addLog(`Initializing ${section.name} sequence...`, "action");
       await delay(1000);
@@ -133,10 +150,12 @@ export default function FillPage() {
     return (
       <div className={styles.container}>
         <div className={styles.doneState}>
-          <div className={`${styles.doneTitle} animate-float`}>DONE ✅</div>
-          <p className={styles.subtitle}>All feedback forms have been processed successfully.</p>
+          <div className={`${styles.doneTitle} animate-float`} style={{ color: 'var(--primary)', textShadow: '0 0 30px var(--primary-glow)' }}>
+            MISSION COMPLETE
+          </div>
+          <p className={styles.subtitle}>All feedback protocols have been executed successfully.</p>
           <div style={{ marginTop: '3rem' }}>
-            <Link href="/" className="btn-primary">Return to Base</Link>
+            <Link href="/" className="btn-primary" style={{ padding: '1.2rem 3rem' }}>Return to Base</Link>
           </div>
         </div>
       </div>
@@ -146,7 +165,7 @@ export default function FillPage() {
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Configuration</h1>
+        <h1 className={styles.title}>Operation Config</h1>
         <p className={styles.subtitle}>Initialize bot parameters for automated execution.</p>
       </header>
 
@@ -319,8 +338,8 @@ export default function FillPage() {
             </div>
           </div>
 
-          <button type="submit" className="btn-primary">
-            Initiate Feedback Bot
+          <button type="submit" className="btn-primary" style={{ marginTop: '2rem', width: '100%', padding: '1.5rem', fontSize: '1.2rem' }}>
+            Initiate Protocol
           </button>
         </form>
       ) : (

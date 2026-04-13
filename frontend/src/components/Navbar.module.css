@@ -3,24 +3,25 @@
   top: 0;
   left: 0;
   width: 100%;
-  padding: 1.5rem 2rem;
+  padding: 1rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  z-index: 1000;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
-  backdrop-filter: blur(10px);
+  z-index: 9999; /* Max priority */
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--glass-border);
 }
 
 .logo {
-  font-family: var(--font-space-grotesk);
-  font-weight: 700;
-  font-size: 1.25rem;
-  letter-spacing: 2px;
+  font-family: var(--font-robotic);
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: 3px;
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  text-transform: uppercase;
 }
 
 .logoDot {

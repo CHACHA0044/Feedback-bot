@@ -1,23 +1,29 @@
 :root {
   --background: #000000;
   --foreground: #ffffff;
-  --primary: #00f3ff;
-  --primary-glow: rgba(0, 243, 255, 0.4);
-  --secondary: #00ff88;
-  --secondary-glow: rgba(0, 255, 136, 0.4);
-  --accent: #ff00ff;
+  --primary: #FFD700; /* Gold */
+  --primary-glow: rgba(255, 215, 0, 0.4);
+  --secondary: #00f3ff; /* Cyan */
+  --secondary-glow: rgba(0, 243, 255, 0.4);
+  --accent: #00ff88;
   --muted: #888888;
   --border: #333333;
   --glass: rgba(255, 255, 255, 0.05);
   --glass-border: rgba(255, 255, 255, 0.1);
   --font-geist-sans: "Geist", sans-serif;
   --font-geist-mono: "Geist Mono", monospace;
-  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-robotic: "Orbitron", sans-serif;
 }
 
 @font-face {
-  font-family: 'Space Grotesk';
-  src: url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+  font-family: 'Orbitron';
+  src: url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-robotic);
+  text-transform: uppercase;
+  letter-spacing: 2px;
 }
 
 * {
@@ -34,11 +40,16 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans);
   -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
 }
 
 a {
   color: inherit;
   text-decoration: none;
+}
+
+main {
+  padding-top: 80px;
 }
 
 /* Futuristic Scrollbar */
@@ -133,23 +144,25 @@ a {
 }
 
 .btn-primary {
-  background: var(--primary);
+  background: linear-gradient(135deg, #FFD700, #B8860B);
   color: #000;
   border: none;
   padding: 12px 24px;
   border-radius: 8px;
-  font-weight: 600;
+  font-weight: 800;
+  font-family: var(--font-robotic);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
 }
 
 .btn-primary:hover {
-  box-shadow: 0 0 20px var(--primary-glow);
-  transform: translateY(-2px);
+  box-shadow: 0 0 30px var(--primary-glow);
+  transform: translateY(-3px) scale(1.02);
 }
 
 .btn-primary::after {
