@@ -47,6 +47,7 @@ export default function FillPage() {
   const [isCaptchaRequired, setIsCaptchaRequired] = useState(false);
   const [captchaSolution, setCaptchaSolution] = useState("");
   const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
+  const [currentStatus, setCurrentStatus] = useState<string>("SYSTEM_IDLE");
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Persistence logic
@@ -145,6 +146,9 @@ export default function FillPage() {
         setLiveScreenshot(data.data);
       } else if (data.type === 'captcha_required') {
         setIsCaptchaRequired(true);
+      } else if (data.type === 'status_update') {
+        setCurrentStatus(data.msg);
+        addLog(`UPLINK_STATUS: ${data.msg}`, "info");
       }
     };
 
@@ -196,6 +200,49 @@ export default function FillPage() {
     }
   };
 
+  const handleImageClick = async (e: React.MouseEvent<HTMLImageElement>) => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 1280; // Assuming 1280 base width
+    const y = ((e.clientY - rect.top) / rect.height) * 800;  // Assuming 800 base height
+
+    try {
+      await fetch(`${backendUrl}/api/interact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'click', x, y })
+      });
+    } catch (err) {
+      console.error("Interaction failed");
+    }
+  };
+
+  const handleKeyPress = async (key: string) => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      await fetch(`${backendUrl}/api/interact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'press', key })
+      });
+    } catch (err) {
+      console.error("Key press failed");
+    }
+  };
+
+  const handleType = async (text: string) => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      await fetch(`${backendUrl}/api/interact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'type', text })
+      });
+    } catch (err) {
+      console.error("Type failed");
+    }
+  };
+
   const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
   if (step === 'done') {
@@ -223,8 +270,8 @@ export default function FillPage() {
 
       {step === 'form' ? (
         <form className={styles.form} onSubmit={handleSubmit}>
-          {/* Section 1: Credentials */}
-          <div className={`${styles.section} glass`}>
+          {/* Section 01: Uplink Credentials (PRIVATE MODE) */}
+          {/* <div className={`${styles.section} glass`}>
             <h2 className={styles.sectionTitle}>Section 01 - Uplink Credentials</h2>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
@@ -252,7 +299,7 @@ export default function FillPage() {
                 />
               </div>
             </div>
-          </div>
+          </div> */}
 
           {/* Section 1.5: Presets */}
           <div className={`${styles.section} ${styles.sectionVisible} glass`}>
@@ -432,13 +479,25 @@ export default function FillPage() {
           <div className={styles.dashboardLayout}>
             {/* Upper Window: Browser View */}
             <div className={styles.browserSection}>
+              {/* Status Badge */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <div style={{ color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '2px' }}>
+                  📡 MISSION_STATUS: {currentStatus}
+                </div>
+                <div style={{ color: '#555', fontSize: '0.65rem' }}>
+                  UPLINK_SECURE: 256-BIT
+                </div>
+              </div>
+
               <div className={styles.browserView}>
-                <div className={styles.liveOverlay}>LIVE_REMOTE_VIEW</div>
+                <div className={styles.liveOverlay}>LIVE_REMOTE_VIEW (INTERACTIVE)</div>
                 {liveScreenshot ? (
                   <img 
                     src={liveScreenshot} 
                     alt="Remote View" 
                     className={`${styles.liveViewImage} ${isCaptchaRequired ? styles.zoomed : ''}`}
+                    onClick={handleImageClick}
+                    style={{ cursor: 'crosshair' }}
                   />
                 ) : (
                   <div style={{ color: '#333', fontSize: '0.8rem', letterSpacing: '4px' }}>
@@ -446,6 +505,15 @@ export default function FillPage() {
                   </div>
                 )}
               </div>
+
+              {/* Quick Controls */}
+              {isCaptchaRequired && (
+                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                  <button onClick={() => handleKeyPress('Tab')} style={{ background: '#222', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.7rem', border: '1px solid #444' }}>TAB</button>
+                  <button onClick={() => handleKeyPress('Enter')} style={{ background: '#222', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.7rem', border: '1px solid #444' }}>ENTER</button>
+                  <button onClick={() => handleKeyPress('Backspace')} style={{ background: '#222', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.7rem', border: '1px solid #444' }}>BSPACE</button>
+                </div>
+              )}
 
               {/* Detached CAPTCHA Controls */}
               <AnimatePresence>
@@ -458,26 +526,39 @@ export default function FillPage() {
                   >
                     <h3 style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontSize: '1rem' }}>ACTION REQUIRED</h3>
                     <p style={{ color: '#ccc', fontSize: '0.85rem', textAlign: 'center' }}>
-                      Verification detected. Solve the CAPTCHA and enter it below.
+                      Manual input required. Login via the view above, then enter the CAPTCHA code (if any) and press CONTINUE.
                     </p>
                     
-                    <div style={{ display: 'flex', gap: '0.5rem', width: '100%', maxWidth: '300px', margin: '0.5rem 0' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', maxWidth: '300px', margin: '0.5rem 0' }}>
                       <input 
                         type="text" 
-                        placeholder="CAPTCHA SOLUTION..."
+                        placeholder="TYPE INTO MATRIX..."
                         className="input-field"
-                        style={{ flex: 1, padding: '0.6rem', background: 'black', border: '1px solid var(--accent-glow)', borderRadius: '4px', fontSize: '0.9rem' }}
-                        value={captchaSolution}
-                        onChange={(e) => setCaptchaSolution(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleCaptchaSolved()}
+                        style={{ width: '100%', padding: '0.6rem', background: '#111', border: '1px solid #333', borderRadius: '4px', fontSize: '0.8rem', color: '#0f0' }}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val) {
+                            handleType(val.slice(-1)); // Send last char
+                          }
+                        }}
                       />
-                      <button 
-                        className="btn-primary" 
-                        style={{ padding: '0.6rem 1rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
-                        onClick={handleCaptchaSolved}
-                      >
-                        SOLVE MATRIX
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <input 
+                          type="text" 
+                          placeholder="CAPTCHA..."
+                          className="input-field"
+                          style={{ flex: 1, padding: '0.6rem', background: 'black', border: '1px solid var(--accent-glow)', borderRadius: '4px', fontSize: '0.9rem' }}
+                          value={captchaSolution}
+                          onChange={(e) => setCaptchaSolution(e.target.value)}
+                        />
+                        <button 
+                          className="btn-primary" 
+                          style={{ padding: '0.6rem 1rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                          onClick={handleCaptchaSolved}
+                        >
+                          CONTINUE 
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 )}

@@ -20,6 +20,8 @@ const PORT = process.env.PORT || 3000;
 
 // ============= SSE LOGGING SYSTEM =============
 let sseClients = [];
+let activePage = null; // Store handle for remote interaction
+let activeBrowser = null;
 
 function broadcast(data) {
   const payload = JSON.stringify(data);
@@ -240,8 +242,8 @@ function parseConfiguration(config = {}) {
   };
 
   return {
-    enrollmentNo,
-    password,
+    enrollmentNo: enrollmentNo || null,
+    password: password || null,
     feedbackOption,
     mentorDept,
     mentorName,
@@ -695,8 +697,12 @@ async function handleNetworkErrors(page) {
   page.on('requestfailed', request => {
     const url = request.url();
 
-    // 🧹 Skip noisy external assets (fonts, CSS, images, etc.)
+    // 🧹 Skip noisy analytics and aborted requests
+    const failure = request.failure();
+    const errorText = failure ? failure.errorText : 'Unknown Error';
     if (
+      url.includes('google-analytics') || 
+      url.includes('analytics') || 
       url.includes('fonts.googleapis.com') ||
       url.includes('fonts.gstatic.com') ||
       url.includes('.css') ||
@@ -704,17 +710,16 @@ async function handleNetworkErrors(page) {
       url.includes('.jpg') ||
       url.includes('.jpeg') ||
       url.includes('.ico') ||
-      url.includes('.svg')
+      url.includes('.svg') ||
+      errorText === 'net::ERR_ABORTED'
     ) {
-      return; // Ignore these
+      return; 
     }
 
     // Log only meaningful internal or API network failures
     log.error(`❌ Network request failed: ${url}`, 2);
-
-    const failure = request.failure();
     if (failure) {
-      log.detail(`Failure: ${failure.errorText}`);
+      log.detail(`Failure: ${errorText}`, 3);
     }
   });
 
@@ -1544,9 +1549,9 @@ async function run(inputConfig = {}) {
     theoryMap, labMap, teachingMap 
   } = config;
 
-  // Validate required fields
-  if (!enrollmentNo || !password || !feedbackOption) {
-    throw new Error("❌ Missing required configuration (Enrollment No, Password, or Feedback Option)");
+  // Validate required fields (Credentials now optional for privacy-mode)
+  if (!feedbackOption) {
+    throw new Error("❌ Missing required configuration (Feedback Option)");
   }
 
   stats.startTime = Date.now();
@@ -1597,6 +1602,8 @@ async function run(inputConfig = {}) {
   //     await dialog.dismiss().catch(() => {});
   //   }
   // });
+  activePage = page;
+  activeBrowser = browser;
   handleNetworkErrors(page);
   log.success("Browser launched successfully");
 
@@ -1655,17 +1662,10 @@ async function run(inputConfig = {}) {
   log.detail(`Enrollment field: ${loginFields.enrollmentSelector}`);
   log.detail(`Password field: ${loginFields.passwordSelector}`);
 
-  await scrollToElement(page, loginFields.enrollmentSelector, false);
-  await page.type(loginFields.enrollmentSelector, enrollmentNo, { delay: 30 });
-  log.detail("Enrollment number entered");
-
-  await scrollToElement(page, loginFields.passwordSelector, false);
-  await page.type(loginFields.passwordSelector, password, { delay: 30 });
-  log.detail("Password entered");
-
-  log.section("🧩 MANUAL CAPTCHA STEP");
-  const captchaMessage = "Enter captcha on the dashboard and press SOLVE MATRIX";
-  await waitForEnter(captchaMessage, page);
+  log.section("🧩 MANUAL LOGIN REQUIRED");
+  const loginMessage = "Please LOGIN manually in the Mission Control view. Once you reach the Dashboard, press SOLVE MATRIX to continue.";
+  broadcast({ type: 'status_update', msg: 'Awaiting Manual Login' });
+  await waitForEnter(loginMessage, page);
 
   log.success("Proceeding after manual login... ✓");
 
@@ -1767,6 +1767,7 @@ async function run(inputConfig = {}) {
   }
 
   // ============= THEORY FEEDBACK =============
+  broadcast({ type: 'status_update', msg: 'PHASE: Theory Feedback' });
   if (Object.keys(theoryMap).length > 0) {
     log.section("📘 THEORY FEEDBACK SUBMISSION");
     log.info(`${Object.keys(theoryMap).length} theory subject(s) to process\n`);
@@ -1796,6 +1797,7 @@ async function run(inputConfig = {}) {
   }
 
   // ============= LAB FEEDBACK =============
+  broadcast({ type: 'status_update', msg: 'PHASE: Lab Feedback' });
   if (Object.keys(labMap).length > 0) {
     log.section("🧪 LAB FEEDBACK SUBMISSION");
     log.info(`${Object.keys(labMap).length} lab subject(s) to process\n`);
@@ -1825,6 +1827,7 @@ async function run(inputConfig = {}) {
   }
 
   // ============= MENTOR FEEDBACK =============
+  broadcast({ type: 'status_update', msg: 'PHASE: Mentor Feedback' });
   if (MENTOR_DEPT || MENTOR_NAME) {
     log.section("👨‍🏫 MENTOR FEEDBACK SUBMISSION");
     log.info(`Dept: ${MENTOR_DEPT || 'NOT PROVIDED'}, Name: ${MENTOR_NAME || 'NOT PROVIDED'}`);
@@ -1960,6 +1963,7 @@ async function run(inputConfig = {}) {
   console.log(`\n${"=".repeat(70)}\n`);
 
   log.success("✅ Bot execution completed successfully!");
+  broadcast({ type: 'status_update', msg: 'MISSION_ACCOMPLISHED' });
   log.info("🌐 Browser will remain open for 5 seconds for verification");
   log.info("📊 Check the page for submitted responses\n");
 
@@ -1980,11 +1984,38 @@ async function run(inputConfig = {}) {
 app.post("/api/resume", (req, res) => {
   if (resumeResolve) {
     log.success("User signaled protocol resumption ✓");
-    resumeResolve();
+    resumeResolve(req.body.captcha || null);
     resumeResolve = null;
     res.send({ status: "success", message: "Resuming..." });
   } else {
     res.status(400).send({ status: "error", message: "No pending action required" });
+  }
+});
+
+app.post("/api/interact", async (req, res) => {
+  const { action, x, y, key, text } = req.body;
+  
+  if (!activePage) {
+    return res.status(400).send({ status: "error", message: "No active browser session" });
+  }
+
+  try {
+    switch (action) {
+      case 'click':
+        await activePage.mouse.click(x, y);
+        break;
+      case 'type':
+        await activePage.keyboard.type(text || key);
+        break;
+      case 'press':
+        await activePage.keyboard.press(key);
+        break;
+      default:
+        return res.status(400).send({ status: "error", message: "Invalid action" });
+    }
+    res.send({ status: "success" });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
   }
 });
 
