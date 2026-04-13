@@ -9,16 +9,18 @@ interface ElectricBorderProps {
   borderRadius?: number;
   className?: string;
   style?: React.CSSProperties;
+  thickness?: number;
 }
 
 const ElectricBorder = ({
   children,
-  color = '#FFD700', // Default changed to Gold
+  color = '#7df9ff',
   speed = 1,
   chaos = 0.12,
   borderRadius = 24,
   className,
-  style
+  style,
+  thickness = 2
 }: ElectricBorderProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -26,7 +28,6 @@ const ElectricBorder = ({
   const timeRef = useRef(0);
   const lastFrameTimeRef = useRef(0);
 
-  // Noise functions
   const random = useCallback((x: number) => {
     return (Math.sin(x * 12.9898) * 43758.5453) % 1;
   }, []);
@@ -90,56 +91,48 @@ const ElectricBorder = ({
 
       let accumulated = 0;
 
-      // Top edge
       if (distance <= accumulated + straightWidth) {
         const progress = (distance - accumulated) / straightWidth;
         return { x: left + radius + progress * straightWidth, y: top };
       }
       accumulated += straightWidth;
 
-      // Top-right corner
       if (distance <= accumulated + cornerArc) {
         const progress = (distance - accumulated) / cornerArc;
         return getCornerPoint(left + width - radius, top + radius, radius, -Math.PI / 2, Math.PI / 2, progress);
       }
       accumulated += cornerArc;
 
-      // Right edge
       if (distance <= accumulated + straightHeight) {
         const progress = (distance - accumulated) / straightHeight;
         return { x: left + width, y: top + radius + progress * straightHeight };
       }
       accumulated += straightHeight;
 
-      // Bottom-right corner
       if (distance <= accumulated + cornerArc) {
         const progress = (distance - accumulated) / cornerArc;
         return getCornerPoint(left + width - radius, top + height - radius, radius, 0, Math.PI / 2, progress);
       }
       accumulated += cornerArc;
 
-      // Bottom edge
       if (distance <= accumulated + straightWidth) {
         const progress = (distance - accumulated) / straightWidth;
         return { x: left + width - radius - progress * straightWidth, y: top + height };
       }
       accumulated += straightWidth;
 
-      // Bottom-left corner
       if (distance <= accumulated + cornerArc) {
         const progress = (distance - accumulated) / cornerArc;
         return getCornerPoint(left + radius, top + height - radius, radius, Math.PI / 2, Math.PI / 2, progress);
       }
       accumulated += cornerArc;
 
-      // Left edge
       if (distance <= accumulated + straightHeight) {
         const progress = (distance - accumulated) / straightHeight;
         return { x: left, y: top + height - radius - progress * straightHeight };
       }
       accumulated += straightHeight;
 
-      // Top-left corner
       const progress = (distance - accumulated) / cornerArc;
       return getCornerPoint(left + radius, top + radius, radius, Math.PI, Math.PI / 2, progress);
     },
@@ -154,27 +147,25 @@ const ElectricBorder = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Configuration
     const octaves = 10;
     const lacunarity = 1.6;
     const gain = 0.7;
     const amplitude = chaos;
     const frequency = 10;
     const baseFlatness = 0;
-    const displacement = 40;
-    const borderOffset = 40;
+    const displacement = 60;
+    const borderOffset = 60;
 
     const updateSize = () => {
       const rect = container.getBoundingClientRect();
-      const padding = 0; // Remove extra offset calculation instability
-      const width = Math.floor(rect.width) + borderOffset * 2;
-      const height = Math.floor(rect.height) + borderOffset * 2;
+      const width = rect.width + borderOffset * 2;
+      const height = rect.height + borderOffset * 2;
 
-      const dpr = 2;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = width * dpr;
       canvas.height = height * dpr;
-      // Do not set styles here to avoid conflicts with fixed CSS
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
       ctx.scale(dpr, dpr);
 
       return { width, height };
@@ -182,30 +173,20 @@ const ElectricBorder = ({
 
     let { width, height } = updateSize();
 
-    let isVisible = true;
-    const IntersectionObs = new IntersectionObserver((entries) => {
-      isVisible = entries[0].isIntersecting;
-    });
-    IntersectionObs.observe(container);
-
     const drawElectricBorder = (currentTime: number) => {
-      if (!canvas || !ctx || !isVisible) {
-        animationRef.current = requestAnimationFrame(drawElectricBorder);
-        return;
-      }
+      if (!canvas || !ctx) return;
 
       const deltaTime = (currentTime - lastFrameTimeRef.current) / 1000;
       timeRef.current += deltaTime * speed;
       lastFrameTimeRef.current = currentTime;
 
-      // Clear canvas
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.scale(dpr, dpr);
 
-      ctx.strokeStyle = color; // Lightning color from prop (White)
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = thickness;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
@@ -267,7 +248,6 @@ const ElectricBorder = ({
       animationRef.current = requestAnimationFrame(drawElectricBorder);
     };
 
-    // Handle resize
     const resizeObserver = new ResizeObserver(() => {
       const newSize = updateSize();
       width = newSize.width;
@@ -275,7 +255,6 @@ const ElectricBorder = ({
     });
     resizeObserver.observe(container);
 
-    // Start animation
     animationRef.current = requestAnimationFrame(drawElectricBorder);
 
     return () => {
@@ -284,7 +263,7 @@ const ElectricBorder = ({
       }
       resizeObserver.disconnect();
     };
-  }, [color, speed, chaos, borderRadius, octavedNoise, getRoundedRectPoint]);
+  }, [color, speed, chaos, borderRadius, thickness, octavedNoise, getRoundedRectPoint]);
 
   const vars = {
     '--electric-border-color': color,

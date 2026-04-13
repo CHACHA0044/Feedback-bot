@@ -109,15 +109,17 @@ export default function LandingPage() {
       <section className={`${styles.hero} scroll-animate`}>
         <div className={styles.botBadge}>
           <span className="animate-pulse" style={{ background: 'var(--primary)', boxShadow: '0 0 10px var(--primary)' }}></span> 
-          SYSTEM STATUS: OPTIMIZED
+          <span>SYSTEM STATUS</span>
+          <span style={{ color: 'var(--primary)' }}> : </span>
+          <span>LAZY<span className={styles.dot}>.</span><span className={styles.dot}>.</span><span className={styles.dot}>.</span></span>
         </div>
         <h1 className={styles.title}>
           <span className={styles.titlePart1}>Automate Your</span> <br />
           <span className={styles.titlePart2}>IUSMS Feedback</span>
         </h1>
         <p className={styles.subtitle}>
-          The futuristic automation engine that skips the boredom. 
-          Fill your forms in under 5 minutes with precision and speed.
+          The smart automation engine for IUSMS feedback — fill forms 
+          in under 5 minutes with speed, precision, and zero repetition.
         </p>
         
         <div className={styles.ctaWrapper}>
@@ -134,9 +136,10 @@ export default function LandingPage() {
         {features.map((feature, idx) => (
           <div key={idx} className="scroll-animate" style={{ transitionDelay: `${idx * 0.1}s` }}>
             <ElectricBorder
-              color="#ffffff" // White for better contrast
-              speed={1.5}
-              chaos={0.15}
+              color="#ffffff" // White lightning
+              speed={1}
+              chaos={0.12}
+              thickness={2}
               borderRadius={20}
               className={styles.featureCardWrapper}
             >

@@ -1,6 +1,5 @@
 .electric-border {
-  --eb-static-color: #FFD700; /* Fixed Gold for static borders */
-  --electric-light-color: oklch(from var(--eb-static-color) l c h);
+  --electric-light-color: oklch(from var(--electric-border-color) l c h);
   position: relative;
   border-radius: inherit;
   overflow: visible;
@@ -9,16 +8,14 @@
 
 .eb-canvas-container {
   position: absolute;
-  /* Use fixed offset to match component logic */
-  inset: -40px; 
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 2;
-  will-change: transform, opacity;
 }
 
 .eb-canvas {
-  width: 100%;
-  height: 100%;
   display: block;
 }
 
@@ -47,12 +44,12 @@
 }
 
 .eb-glow-1 {
-  border: 1px solid rgba(255, 215, 0, 0.4);
+  border: 2px solid oklch(from var(--electric-border-color) l c h / 0.6);
   filter: blur(1px);
 }
 
 .eb-glow-2 {
-  border: 1px solid rgba(255, 215, 0, 0.6);
+  border: 2px solid var(--electric-light-color);
   filter: blur(4px);
 }
 
@@ -60,6 +57,6 @@
   z-index: -1;
   transform: scale(1.1);
   filter: blur(32px);
-  opacity: 0.3;
-  background: linear-gradient(-30deg, var(--electric-light-color), transparent, var(--electric-border-color));
+  opacity: 0.4;
+  background: radial-gradient(circle, rgba(255, 215, 0, 0.4) 0%, transparent 70%);
 }
