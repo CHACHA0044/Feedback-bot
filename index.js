@@ -7,7 +7,11 @@ import express from "express";
 import cors from "cors";
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || '*',
+  methods: ['GET', 'POST'],
+  credentials: true
+}));
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
@@ -140,31 +144,65 @@ async function waitForEnter(message) {
   });
 }
 
-// ============= CONFIGURATION =============
-const {
-  ENROLLMENT_NO,
-  PASSWORD,
-  FEEDBACK_OPTION,
-  MENTOR_DEPT,
-  MENTOR_NAME,
-  THEORY_SUBJECTS,
-  THEORY_TEACHERS,
-  LAB_SUBJECTS,
-  LAB_TEACHERS,
-  TEACHING_SUBJECTS,
-  TEACHING_TEACHERS,
-  ENVIRONMENT // 'local' or 'production'
-} = process.env;
-// env
-console.log("ENROLLMENT NO from env:", JSON.stringify(ENROLLMENT_NO));
-console.log("PASSWORD length:", PASSWORD ? PASSWORD.length : 0);
+// ============= CONFIGURATION PARSING =============
+function parseConfiguration(config = {}) {
+  const {
+    ENROLLMENT_NO: envEnrollment,
+    PASSWORD: envPassword,
+    FEEDBACK_OPTION: envFeedback,
+    MENTOR_DEPT: envMentorDept,
+    MENTOR_NAME: envMentorName,
+    THEORY_SUBJECTS: envTheorySub,
+    THEORY_TEACHERS: envTheoryTea,
+    LAB_SUBJECTS: envLabSub,
+    LAB_TEACHERS: envLabTea,
+    TEACHING_SUBJECTS: envTeachingSub,
+    TEACHING_TEACHERS: envTeachingTea,
+    ENVIRONMENT: envEnv
+  } = process.env;
 
-// Validate required fields
-if (!ENROLLMENT_NO || !PASSWORD || !FEEDBACK_OPTION) {
-  throw new Error("❌ Missing required environment variables (ENROLLMENT NO, PASSWORD, FEEDBACK_OPTION)");
+  const enrollmentNo = config.studentId || config.ENROLLMENT_NO || envEnrollment;
+  const password = config.password || config.PASSWORD || envPassword;
+  const feedbackOption = config.feedbackOption || config.FEEDBACK_OPTION || envFeedback;
+  const mentorDept = config.mentorDept || config.MENTOR_DEPT || envMentorDept;
+  const mentorName = config.mentorName || config.MENTOR_NAME || envMentorName;
+  
+  const theorySubjects = config.theoryCodes || config.THEORY_SUBJECTS || envTheorySub;
+  const theoryTeachers = config.theoryTeachers || config.THEORY_TEACHERS || envTheoryTea;
+  
+  const labSubjects = config.labCodes || config.LAB_SUBJECTS || envLabSub;
+  const labTeachers = config.labTeachers || config.LAB_TEACHERS || envLabTea;
+  
+  const teachingSubjects = config.teachingCodes || config.TEACHING_SUBJECTS || envTeachingSub;
+  const teachingTeachers = config.teachingTeachers || config.TEACHING_TEACHERS || envTeachingTea;
+
+  const isLocal = !envEnv || envEnv.toLowerCase() === 'local';
+
+  // Helper for mapping
+  const createMapFromStrings = (subStr, teaStr) => {
+    const subjects = parseEnvList(subStr);
+    const teachers = parseEnvList(teaStr);
+    const map = {};
+    subjects.forEach((sub, idx) => {
+      map[sub] = teachers[idx] || "";
+    });
+    return map;
+  };
+
+  return {
+    enrollmentNo,
+    password,
+    feedbackOption,
+    mentorDept,
+    mentorName,
+    theoryMap: createMapFromStrings(theorySubjects, theoryTeachers),
+    labMap: createMapFromStrings(labSubjects, labTeachers),
+    teachingMap: createMapFromStrings(teachingSubjects, teachingTeachers),
+    isLocal
+  };
 }
 
-const IS_LOCAL = !ENVIRONMENT || ENVIRONMENT.toLowerCase() === 'local';
+const IS_LOCAL = !process.env.ENVIRONMENT || process.env.ENVIRONMENT.toLowerCase() === 'local';
 
 // URL Configuration - Only used in production mode
 const URLS = {
@@ -188,30 +226,8 @@ const URLS = {
   }
 };
 
-// Parse comma-separated lists from env
+// Parse comma-separated lists
 const parseEnvList = (str) => str ? str.split(",").map(s => s.trim()).filter(s => s) : [];
-
-// Create subject-teacher mappings
-const theorySubjects = parseEnvList(THEORY_SUBJECTS);
-const theoryTeachers = parseEnvList(THEORY_TEACHERS);
-const theoryMap = {};
-theorySubjects.forEach((sub, idx) => {
-  theoryMap[sub] = theoryTeachers[idx] || "";
-});
-
-const labSubjects = parseEnvList(LAB_SUBJECTS);
-const labTeachers = parseEnvList(LAB_TEACHERS);
-const labMap = {};
-labSubjects.forEach((sub, idx) => {
-  labMap[sub] = labTeachers[idx] || "";
-});
-
-const teachingSubjects = parseEnvList(TEACHING_SUBJECTS);
-const teachingTeachers = parseEnvList(TEACHING_TEACHERS);
-const teachingMap = {};
-teachingSubjects.forEach((sub, idx) => {
-  teachingMap[sub] = teachingTeachers[idx] || "";
-});
 
 // Track execution statistics
 const stats = {
@@ -1456,7 +1472,18 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
 }
 
 // ============= MAIN EXECUTION =============
-async function run() {
+async function run(inputConfig = {}) {
+  const config = parseConfiguration(inputConfig);
+  const { 
+    enrollmentNo, password, feedbackOption, mentorDept, mentorName, 
+    theoryMap, labMap, teachingMap 
+  } = config;
+
+  // Validate required fields
+  if (!enrollmentNo || !password || !feedbackOption) {
+    throw new Error("❌ Missing required configuration (Enrollment No, Password, or Feedback Option)");
+  }
+
   stats.startTime = Date.now();
   const startTimestamp = getCurrentTimestamp();
 
@@ -1464,12 +1491,12 @@ async function run() {
   log.time(`Start Time: ${startTimestamp}`);
   log.info("Configuration loaded successfully");
   log.detail(`Mode: ${IS_LOCAL ? 'LOCAL (Testing)' : 'PRODUCTION (Live Site)'}`);
-  log.detail(`Username: ${ENROLLMENT_NO}`);
-  log.detail(`Feedback Option: ${FEEDBACK_OPTION}`);
+  log.detail(`Username: ${enrollmentNo}`);
+  log.detail(`Feedback Option: ${feedbackOption}`);
   log.detail(`Theory Subjects: ${Object.keys(theoryMap).length}`);
   log.detail(`Lab Subjects: ${Object.keys(labMap).length}`);
   log.detail(`Teaching Subjects: ${Object.keys(teachingMap).length}`);
-  log.detail(`Mentor Feedback: ${MENTOR_DEPT && MENTOR_NAME ? 'Yes' : 'No'}`);
+  log.detail(`Mentor Feedback: ${mentorDept && mentorName ? 'Yes' : 'No'}`);
 
   log.section("🌐 LAUNCHING BROWSER");
   const browser = await puppeteer.launch({
@@ -1861,8 +1888,8 @@ app.post("/api/execute", async (req, res) => {
     return res.status(400).send({ status: "error", message: "Bot is already running" });
   }
 
-  // Run the bot in the background
-  run().catch(err => {
+  // Run the bot in the background with frontend inputs
+  run(req.body).catch(err => {
     log.error(`API Runtime error: ${err.message}`);
   });
 

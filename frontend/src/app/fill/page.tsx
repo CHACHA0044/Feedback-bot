@@ -81,19 +81,41 @@ export default function FillPage() {
     addLog("System initialized. Establishing Uplink...", "action");
     setProgress(5);
     
-    await delay(1500);
-    addLog("Contacting IUSMS Gateway...", "action");
+    await delay(1000);
+    addLog("Contacting IUSMS Gateway (Render Backend)...", "action");
     setProgress(15);
     
-    await delay(2000);
-    addLog("Injecting credentials...", "info");
-    addLog(`Target User: ${formData.studentId}`, "info");
-    setProgress(30);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    
+    try {
+      const response = await fetch(`${backendUrl}/api/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
 
-    await delay(1500);
-    setIsCaptchaRequired(true);
-    addLog("SECURITY INTERCEPT: Manual CAPTCHA verify required.", "error");
-    addLog("Please solve the CAPTCHA in the terminal view.", "info");
+      const data = await response.json();
+
+      if (response.ok) {
+        addLog(`Protocol initiated: ${data.message}`, "success");
+        addLog("Injecting credentials into remote browser...", "info");
+        setProgress(30);
+        
+        await delay(2000);
+        setIsCaptchaRequired(true);
+        addLog("SECURITY INTERCEPT: Manual CAPTCHA verify required.", "error");
+        addLog("Solve the CAPTCHA in your IUSMS window (Render Environment).", "info");
+      } else {
+        addLog(`Uplink Failed: ${data.message}`, "error");
+        setStep('form');
+      }
+    } catch (err) {
+      addLog(`Critical Connection Error: ${err instanceof Error ? err.message : 'Unknown Error'}`, "error");
+      addLog("Ensure your Render backend is running and CORS is configured.", "error");
+      setStep('form');
+    }
   };
 
   const handleCaptchaSolved = async () => {
