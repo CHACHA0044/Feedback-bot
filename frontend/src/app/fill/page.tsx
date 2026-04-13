@@ -45,6 +45,7 @@ export default function FillPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [progress, setProgress] = useState(0);
   const [isCaptchaRequired, setIsCaptchaRequired] = useState(false);
+  const [captchaSolution, setCaptchaSolution] = useState("");
   const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -182,9 +183,14 @@ export default function FillPage() {
   const handleCaptchaSolved = async () => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     try {
-      await fetch(`${backendUrl}/api/resume`, { method: 'POST' });
+      await fetch(`${backendUrl}/api/resume`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ captcha: captchaSolution })
+      });
       setIsCaptchaRequired(false);
-      addLog("User signal received. Proceeding...", "success");
+      setCaptchaSolution("");
+      addLog("User signal received. Solution transmitted to Matrix.", "success");
     } catch (err) {
       addLog("Failed to send resume signal.", "error");
     }
@@ -452,17 +458,27 @@ export default function FillPage() {
                   >
                     <h3 style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontSize: '1rem' }}>ACTION REQUIRED</h3>
                     <p style={{ color: '#ccc', fontSize: '0.85rem', textAlign: 'center' }}>
-                      Manual verification detected. Please solve the CAPTCHA in the view above.
-                      <br/>
-                      <span style={{ color: 'var(--secondary)', fontWeight: 700 }}>Press button ONLY once page is fully loaded.</span>
+                      Verification detected. Solve the CAPTCHA and enter it below.
                     </p>
-                    <button 
-                      className="btn-primary" 
-                      style={{ fontSize: '0.9rem', padding: '0.75rem 2rem' }}
-                      onClick={handleCaptchaSolved}
-                    >
-                      I'VE SOLVED IT
-                    </button>
+                    
+                    <div style={{ display: 'flex', gap: '0.5rem', width: '100%', maxWidth: '300px', margin: '0.5rem 0' }}>
+                      <input 
+                        type="text" 
+                        placeholder="CAPTCHA SOLUTION..."
+                        className="input-field"
+                        style={{ flex: 1, padding: '0.6rem', background: 'black', border: '1px solid var(--accent-glow)', borderRadius: '4px', fontSize: '0.9rem' }}
+                        value={captchaSolution}
+                        onChange={(e) => setCaptchaSolution(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleCaptchaSolved()}
+                      />
+                      <button 
+                        className="btn-primary" 
+                        style={{ padding: '0.6rem 1rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
+                        onClick={handleCaptchaSolved}
+                      >
+                        SOLVE MATRIX
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
