@@ -1,5 +1,6 @@
 .electric-border {
-  --electric-light-color: oklch(from var(--electric-border-color) l c h);
+  --eb-static-color: #FFD700; /* Fixed Gold for static borders */
+  --electric-light-color: oklch(from var(--eb-static-color) l c h);
   position: relative;
   border-radius: inherit;
   overflow: visible;
@@ -45,12 +46,12 @@
 }
 
 .eb-glow-1 {
-  border: 2px solid oklch(from var(--electric-border-color) l c h / 0.6);
+  border: 1px solid rgba(255, 215, 0, 0.4);
   filter: blur(1px);
 }
 
 .eb-glow-2 {
-  border: 2px solid var(--electric-light-color);
+  border: 1px solid rgba(255, 215, 0, 0.6);
   filter: blur(4px);
 }
 

@@ -165,7 +165,7 @@ export default function FillPage() {
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Operation Config</h1>
+        <h1 className={styles.title} style={{ fontSize: '3.5rem' }}>Operation Config</h1>
         <p className={styles.subtitle}>Initialize bot parameters for automated execution.</p>
       </header>
 

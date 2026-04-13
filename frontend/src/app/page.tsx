@@ -138,7 +138,7 @@ export default function LandingPage() {
       </section>
 
       <div style={{ width: '100%', maxWidth: '1000px', margin: '6rem auto 2rem' }}>
-        <h2 className={styles.sectionTitle} style={{ textAlign: 'center' }}>System Clearance</h2>
+        <h2 className={styles.sectionTitle} style={{ textAlign: 'center', fontSize: '2.5rem' }}>System Clearance</h2>
         <p className={styles.subtext} style={{ textAlign: 'center' }}>(older gitbash version)</p>
       </div>
 

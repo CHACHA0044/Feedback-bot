@@ -161,11 +161,12 @@ const ElectricBorder = ({
     const amplitude = chaos;
     const frequency = 10;
     const baseFlatness = 0;
-    const displacement = 60;
-    const borderOffset = 60;
+    const displacement = 40;
+    const borderOffset = 40;
 
     const updateSize = () => {
       const rect = container.getBoundingClientRect();
+      const padding = 0; // Remove extra offset calculation instability
       const width = Math.floor(rect.width) + borderOffset * 2;
       const height = Math.floor(rect.height) + borderOffset * 2;
 
@@ -203,8 +204,8 @@ const ElectricBorder = ({
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.scale(dpr, dpr);
 
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = color; // Lightning color from prop (White)
+      ctx.lineWidth = 1.5;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
