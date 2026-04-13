@@ -123,16 +123,48 @@ async function getUserConfirmation() {
  */
 // Global Resolver for production manual steps
 let resumeResolve = null;
+app.post("/api/resume", (req, res) => {
+  if (resumeResolve) {
+    log.success("User signaled protocol resumption ✓");
+    resumeResolve(req.body.captcha || null);
+    resumeResolve = null;
+    res.send({ status: "success", message: "Resuming..." });
+  } else {
+    res.status(400).send({ status: "error", message: "No pending action required" });
+  }
+});
 
-async function waitForEnter(message) {
+async function waitForEnter(message, page = null) {
   if (!IS_LOCAL) {
     log.section("🧩 REMOTE ACTION REQUIRED");
     log.info(message);
     broadcast({ type: 'captcha_required' });
     
-    return new Promise(resolve => {
+    // Wait for the user to solve it via frontend
+    const captchaText = await new Promise(resolve => {
       resumeResolve = resolve;
     });
+
+    if (captchaText && page) {
+      log.action("Typing remote captcha solution...");
+      // Typical IUSMS captcha field is #txtcap, login is #btn_login
+      const solved = await page.evaluate(async (text) => {
+        const capInput = document.querySelector('#txtcap') || document.querySelector('input[name*="cap"]');
+        const loginBtn = document.querySelector('#btn_login') || document.querySelector('input[type="submit"]');
+        if (capInput && loginBtn) {
+          capInput.value = text;
+          loginBtn.click();
+          return true;
+        }
+        return false;
+      }, captchaText);
+      
+      if (solved) {
+        log.success("Captcha applied and login triggered ✓");
+        await delay(3000); // Wait for login to process
+      }
+    }
+    return;
   }
 
   const colors = {
@@ -1568,14 +1600,14 @@ async function run(inputConfig = {}) {
   handleNetworkErrors(page);
   log.success("Browser launched successfully");
 
-  // Screenshot broadcasting loop
+  // Screenshot broadcasting loop - High frequency for production smoothness
   const screenshotInterval = setInterval(async () => {
     try {
       if (browser.isConnected() && !page.isClosed()) {
         const screenshot = await page.screenshot({ 
           encoding: 'base64',
           type: 'jpeg',
-          quality: 30 // Low quality for speed
+          quality: IS_LOCAL ? 30 : 25 // Even lower quality for prod speed
         });
         broadcast({ type: 'screenshot', data: `data:image/jpeg;base64,${screenshot}` });
       } else {
@@ -1584,7 +1616,7 @@ async function run(inputConfig = {}) {
     } catch (e) {
       clearInterval(screenshotInterval);
     }
-  }, 1500); // Send screenshot every 1.5 seconds
+  }, IS_LOCAL ? 1500 : 700); // 700ms for production smooth view
 
   // ============= LOGIN =============
   log.section("🔐 AUTHENTICATION");
@@ -1624,16 +1656,16 @@ async function run(inputConfig = {}) {
   log.detail(`Password field: ${loginFields.passwordSelector}`);
 
   await scrollToElement(page, loginFields.enrollmentSelector, false);
-  await page.type(loginFields.enrollmentSelector, ENROLLMENT_NO, { delay: 30 });
+  await page.type(loginFields.enrollmentSelector, enrollmentNo, { delay: 30 });
   log.detail("Enrollment number entered");
 
   await scrollToElement(page, loginFields.passwordSelector, false);
-  await page.type(loginFields.passwordSelector, PASSWORD, { delay: 30 });
+  await page.type(loginFields.passwordSelector, password, { delay: 30 });
   log.detail("Password entered");
 
   log.section("🧩 MANUAL CAPTCHA STEP");
-  const captchaMessage = "Enter captcha on the page, login and when page is loaded press ENTER in terminal";
-  await waitForEnter(captchaMessage);
+  const captchaMessage = "Enter captcha on the dashboard and press SOLVE MATRIX";
+  await waitForEnter(captchaMessage, page);
 
   log.success("Proceeding after manual login... ✓");
 
