@@ -9,15 +9,16 @@
 
 .eb-canvas-container {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  /* Use fixed offset to match component logic */
+  inset: -40px; 
   pointer-events: none;
   z-index: 2;
   will-change: transform, opacity;
 }
 
 .eb-canvas {
+  width: 100%;
+  height: 100%;
   display: block;
 }
 

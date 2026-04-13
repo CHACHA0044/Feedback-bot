@@ -48,6 +48,24 @@ const features: Feature[] = [
     icon: "🧩",
     description: "Integrated bridge for the critical IUSMS security step.",
     detail: "The bot pauses execution at the login stage, allowing you to solve the CAPTCHA in the terminal view or browser, then resumes automation immediately."
+  },
+  {
+    title: "Core Architecture",
+    icon: "🏗️",
+    description: "Multi-tier engine design for maximum reliability.",
+    detail: "Built with a modular internal structure that separates portal navigation, data injection, and logic validation, ensuring the system remains stable even if portal code changes."
+  },
+  {
+    title: "Cloud Deployment",
+    icon: "☁️",
+    description: "Vercel-native optimization for high availability.",
+    detail: "Optimized for serverless environments (Vercel/Next.js), enabling global access and rapid updates without local infrastructure dependencies."
+  },
+  {
+    title: "Secure Uplink",
+    icon: "🔒",
+    description: "Encrypted credential handling and safe sessions.",
+    detail: "Uses advanced encryption for local credential handling and secure session management to protect your IUSMS access tokens and personal data."
   }
 ];
 
