@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: feedback-bot-backend
+    env: node
+    plan: free # Can be upgraded to 'starter' for non-sleeping
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 18.0.0
+      - key: PUPPETEER_CACHE_DIR
+        value: .cache/puppeteer
+      - key: FEEDBACK_OPTION
+        sync: false
+      - key: ENROLLMENT_NO
+        sync: false
+      - key: PASSWORD
+        sync: false
+      - key: ENVIRONMENT
+        value: production
