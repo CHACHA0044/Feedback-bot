@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "postinstall": "npx puppeteer browsers install chrome"
+    "postinstall": "chmod +x node_modules/.bin/puppeteer && node_modules/.bin/puppeteer browsers install chrome"
   },
   "keywords": [
     "iul",
