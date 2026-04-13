@@ -166,11 +166,10 @@ const ElectricBorder = ({
 
     const updateSize = () => {
       const rect = container.getBoundingClientRect();
-      const width = rect.width + borderOffset * 2;
-      const height = rect.height + borderOffset * 2;
+      const width = Math.floor(rect.width) + borderOffset * 2;
+      const height = Math.floor(rect.height) + borderOffset * 2;
 
-      // Use device pixel ratio for sharp rendering
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = 2; // Fixed DPR for stability
       canvas.width = width * dpr;
       canvas.height = height * dpr;
       canvas.style.width = `${width}px`;
@@ -182,8 +181,17 @@ const ElectricBorder = ({
 
     let { width, height } = updateSize();
 
+    let isVisible = true;
+    const IntersectionObs = new IntersectionObserver((entries) => {
+      isVisible = entries[0].isIntersecting;
+    });
+    IntersectionObs.observe(container);
+
     const drawElectricBorder = (currentTime: number) => {
-      if (!canvas || !ctx) return;
+      if (!canvas || !ctx || !isVisible) {
+        animationRef.current = requestAnimationFrame(drawElectricBorder);
+        return;
+      }
 
       const deltaTime = (currentTime - lastFrameTimeRef.current) / 1000;
       timeRef.current += deltaTime * speed;
