@@ -24,9 +24,6 @@ function broadcast(data) {
   sseClients.forEach(client => client.res.write(`data: ${payload}\n\n`));
 }
 
-// Intercept log object to broadcast to SSE
-const originalLog = { ...log }; // We will update the log object after its definition
-
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -323,7 +320,7 @@ const log = {
 };
 
 // Update log methods to broadcast
-const logMethods = ['info', 'success', 'error', 'warning', 'action', 'detail', 'scroll', 'skip', 'time'];
+const logMethods = ['info', 'success', 'error', 'warning', 'action', 'detail', 'scroll', 'skip', 'time', 'section', 'subsection'];
 logMethods.forEach(method => {
   const original = log[method];
   log[method] = (text, indent = 1) => {
