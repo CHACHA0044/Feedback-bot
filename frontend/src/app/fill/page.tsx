@@ -48,6 +48,8 @@ export default function FillPage() {
   const [captchaSolution, setCaptchaSolution] = useState("");
   const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
   const [currentStatus, setCurrentStatus] = useState<string>("SYSTEM_IDLE");
+  const [isPaused, setIsPaused] = useState(false);
+  const [isKilled, setIsKilled] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   // Persistence logic
@@ -90,6 +92,21 @@ export default function FillPage() {
     }
   }, [step]);
 
+  useEffect(() => {
+    if (step !== 'executing') return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const key = e.key;
+      // Allow single characters (including numpad numbers) and specific control keys
+      if (['Enter', 'Tab', 'Backspace', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key) || key.length === 1) {
+        handleKeyPress(key);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [step]);
+
   const handleLoadPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const presetName = e.target.value;
     if (presetName && PRESETS[presetName as keyof typeof PRESETS]) {
@@ -125,15 +142,15 @@ export default function FillPage() {
   const startExecution = async () => {
     addLog("System initialized. Establishing Uplink...", "action");
     setProgress(5);
-    
+
     await delay(1000);
     addLog("Connecting to Mission Control stream...", "action");
-    
+
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    
+
     // Connect to the log/screenshot stream first
     const eventSource = new EventSource(`${backendUrl}/api/stream`);
-    
+
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'log') {
@@ -157,7 +174,7 @@ export default function FillPage() {
     };
 
     setProgress(15);
-    
+
     try {
       const response = await fetch(`${backendUrl}/api/execute`, {
         method: 'POST',
@@ -187,7 +204,7 @@ export default function FillPage() {
   const handleCaptchaSolved = async () => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     try {
-      await fetch(`${backendUrl}/api/resume`, { 
+      await fetch(`${backendUrl}/api/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ captcha: captchaSolution })
@@ -240,6 +257,32 @@ export default function FillPage() {
       });
     } catch (err) {
       console.error("Type failed");
+    }
+  };
+
+  const handlePause = async () => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      const res = await fetch(`${backendUrl}/api/pause`, { method: 'POST' });
+      const data = await res.json();
+      setIsPaused(data.isPaused);
+      addLog(`SYSTEM: Protocol ${data.isPaused ? 'Paused' : 'Resumed'}`, "action");
+    } catch (err) {
+      console.error("Pause failed");
+    }
+  };
+
+  const handleKill = async () => {
+    if (!confirm("Are you sure you want to TERMINATE the process? This will close the browser.")) return;
+
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      await fetch(`${backendUrl}/api/kill`, { method: 'POST' });
+      setIsKilled(true);
+      setCurrentStatus("PROCESS_TERMINATED");
+      addLog("SYSTEM: EMERGENCY KILL TRIGGERED", "error");
+    } catch (err) {
+      console.error("Kill failed");
     }
   };
 
@@ -304,11 +347,11 @@ export default function FillPage() {
           {/* Section 1.5: Presets */}
           <div className={`${styles.section} ${styles.sectionVisible} glass`}>
             <div className={styles.sectionTitle}>
-              <span>RAPID CONFIGURATION</span>
+              <span>Section 01 - Presets</span>
             </div>
             <div className={styles.inputGroup}>
               <label className={styles.label}>Load System Preset</label>
-              <select 
+              <select
                 className={styles.select}
                 onChange={handleLoadPreset}
                 defaultValue=""
@@ -327,10 +370,10 @@ export default function FillPage() {
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Subject Codes (comma-separated)</label>
-                <input 
-                  type="text" 
-                  name="theoryCodes" 
-                  className={styles.input} 
+                <input
+                  type="text"
+                  name="theoryCodes"
+                  className={styles.input}
                   placeholder="CG301,CS301,..."
                   value={formData.theoryCodes}
                   onChange={handleInputChange}
@@ -338,10 +381,10 @@ export default function FillPage() {
               </div>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Teacher Names (synced)</label>
-                <input 
-                  type="text" 
-                  name="theoryTeachers" 
-                  className={styles.input} 
+                <input
+                  type="text"
+                  name="theoryTeachers"
+                  className={styles.input}
                   placeholder="Teacher 1, Teacher 2, ..."
                   value={formData.theoryTeachers}
                   onChange={handleInputChange}
@@ -356,10 +399,10 @@ export default function FillPage() {
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Lab Codes</label>
-                <input 
-                  type="text" 
-                  name="labCodes" 
-                  className={styles.input} 
+                <input
+                  type="text"
+                  name="labCodes"
+                  className={styles.input}
                   placeholder="CS310,CS302,..."
                   value={formData.labCodes}
                   onChange={handleInputChange}
@@ -367,10 +410,10 @@ export default function FillPage() {
               </div>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Lab Engineers</label>
-                <input 
-                  type="text" 
-                  name="labTeachers" 
-                  className={styles.input} 
+                <input
+                  type="text"
+                  name="labTeachers"
+                  className={styles.input}
                   placeholder="Engineer 1, Engineer 2, ..."
                   value={formData.labTeachers}
                   onChange={handleInputChange}
@@ -385,10 +428,10 @@ export default function FillPage() {
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Department</label>
-                <input 
-                  type="text" 
-                  name="mentorDept" 
-                  className={styles.input} 
+                <input
+                  type="text"
+                  name="mentorDept"
+                  className={styles.input}
                   placeholder="Computer Science"
                   value={formData.mentorDept}
                   onChange={handleInputChange}
@@ -396,10 +439,10 @@ export default function FillPage() {
               </div>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Mentor Name</label>
-                <input 
-                  type="text" 
-                  name="mentorName" 
-                  className={styles.input} 
+                <input
+                  type="text"
+                  name="mentorName"
+                  className={styles.input}
                   placeholder="Identity Prime"
                   value={formData.mentorName}
                   onChange={handleInputChange}
@@ -414,10 +457,10 @@ export default function FillPage() {
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Subject Codes</label>
-                <input 
-                  type="text" 
-                  name="teachingCodes" 
-                  className={styles.input} 
+                <input
+                  type="text"
+                  name="teachingCodes"
+                  className={styles.input}
                   placeholder="CS304,CS301,..."
                   value={formData.teachingCodes}
                   onChange={handleInputChange}
@@ -425,10 +468,10 @@ export default function FillPage() {
               </div>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Instructors</label>
-                <input 
-                  type="text" 
-                  name="teachingTeachers" 
-                  className={styles.input} 
+                <input
+                  type="text"
+                  name="teachingTeachers"
+                  className={styles.input}
                   placeholder="Instructor 1, Instructor 2, ..."
                   value={formData.teachingTeachers}
                   onChange={handleInputChange}
@@ -442,8 +485,8 @@ export default function FillPage() {
             <h2 className={styles.sectionTitle}>Section 06 - Sentiment Bias</h2>
             <div className={styles.inputGroup}>
               <label className={styles.label}>Response Strategy</label>
-              <select 
-                name="feedbackOption" 
+              <select
+                name="feedbackOption"
                 className={styles.select}
                 value={formData.feedbackOption}
                 onChange={handleInputChange}
@@ -469,8 +512,8 @@ export default function FillPage() {
               <span>{Math.round(progress)}%</span>
             </div>
             <div className={styles.progressBar}>
-              <div 
-                className={styles.progressFill} 
+              <div
+                className={styles.progressFill}
                 style={{ width: `${progress}%` }}
               ></div>
             </div>
@@ -482,26 +525,44 @@ export default function FillPage() {
               {/* Status Badge */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                 <div style={{ color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '2px' }}>
-                  📡 MISSION_STATUS: {currentStatus}
+                  📡 MISSION_STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : currentStatus)}
                 </div>
-                <div style={{ color: '#555', fontSize: '0.65rem' }}>
-                  UPLINK_SECURE: 256-BIT
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {!isKilled && (
+                    <>
+                      <button
+                        onClick={handlePause}
+                        style={{ background: isPaused ? 'var(--primary)' : '#222', color: isPaused ? '#000' : '#fff', border: '1px solid var(--primary)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 'bold' }}
+                      >
+                        {isPaused ? '▶ RESUME' : '⏸ PAUSE'}
+                      </button>
+                      <button
+                        onClick={handleKill}
+                        style={{ background: '#300', color: '#f00', border: '1px solid #f00', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 'bold' }}
+                      >
+                        ⏹ KILL
+                      </button>
+                    </>
+                  )}
+                  <div style={{ color: '#555', fontSize: '0.65rem', alignSelf: 'center' }}>
+                    UPLINK_SECURE
+                  </div>
                 </div>
               </div>
 
               <div className={styles.browserView}>
-                <div className={styles.liveOverlay}>LIVE_REMOTE_VIEW (INTERACTIVE)</div>
-                {liveScreenshot ? (
-                  <img 
-                    src={liveScreenshot} 
-                    alt="Remote View" 
+                <div className={styles.liveOverlay}>{isKilled ? 'CONNECTION_LOST' : 'LIVE_REMOTE_VIEW (INTERACTIVE)'}</div>
+                {(liveScreenshot && !isKilled) ? (
+                  <img
+                    src={liveScreenshot}
+                    alt="Remote View"
                     className={`${styles.liveViewImage} ${isCaptchaRequired ? styles.zoomed : ''}`}
                     onClick={handleImageClick}
                     style={{ cursor: 'crosshair' }}
                   />
                 ) : (
-                  <div style={{ color: '#333', fontSize: '0.8rem', letterSpacing: '4px' }}>
-                    WAITING_FOR_DATA_STREAM...
+                  <div style={{ color: isKilled ? '#f00' : '#333', fontSize: '0.8rem', letterSpacing: '4px', textAlign: 'center', padding: '2rem' }}>
+                    {isKilled ? 'SYSTEM_SHUTDOWN: PROCESS_TERMINATED' : 'WAITING_FOR_DATA_STREAM...'}
                   </div>
                 )}
               </div>
@@ -518,47 +579,27 @@ export default function FillPage() {
               {/* Detached CAPTCHA Controls */}
               <AnimatePresence>
                 {isCaptchaRequired && (
-                  <motion.div 
+                  <motion.div
                     className={styles.instructionBox}
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
                   >
-                    <h3 style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontSize: '1rem' }}>ACTION REQUIRED</h3>
-                    <p style={{ color: '#ccc', fontSize: '0.85rem', textAlign: 'center' }}>
-                      Manual input required. Login via the view above, then enter the CAPTCHA code (if any) and press CONTINUE.
+                    <p style={{ color: '#ccc', fontSize: '0.9rem', textAlign: 'center', fontWeight: 'bold' }}>
+                      MISSION STATUS: ACTION REQUIRED
                     </p>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', maxWidth: '300px', margin: '0.5rem 0' }}>
-                      <input 
-                        type="text" 
-                        placeholder="TYPE INTO MATRIX..."
-                        className="input-field"
-                        style={{ width: '100%', padding: '0.6rem', background: '#111', border: '1px solid #333', borderRadius: '4px', fontSize: '0.8rem', color: '#0f0' }}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val) {
-                            handleType(val.slice(-1)); // Send last char
-                          }
-                        }}
-                      />
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <input 
-                          type="text" 
-                          placeholder="CAPTCHA..."
-                          className="input-field"
-                          style={{ flex: 1, padding: '0.6rem', background: 'black', border: '1px solid var(--accent-glow)', borderRadius: '4px', fontSize: '0.9rem' }}
-                          value={captchaSolution}
-                          onChange={(e) => setCaptchaSolution(e.target.value)}
-                        />
-                        <button 
-                          className="btn-primary" 
-                          style={{ padding: '0.6rem 1rem', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
-                          onClick={handleCaptchaSolved}
-                        >
-                          CONTINUE 
-                        </button>
-                      </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', maxWidth: '300px', margin: '0.5rem 0', alignItems: 'center' }}>
+                      <button
+                        className="btn-primary"
+                        style={{ padding: '0.8rem 2rem', fontSize: '1rem', width: '100%', textShadow: '0 0 10px var(--primary-glow)' }}
+                        onClick={handleCaptchaSolved}
+                      >
+                        CONTINUE PROTOCOL
+                      </button>
+                      <span style={{ color: '#666', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1.5px', textAlign: 'center' }}>
+                        Press once logged in and page is loaded
+                      </span>
                     </div>
                   </motion.div>
                 )}
@@ -582,8 +623,8 @@ export default function FillPage() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
-              <button 
-                className="btn-primary" 
+              <button
+                className="btn-primary"
                 style={{ padding: '0.8rem 2rem', opacity: 0.8 }}
                 onClick={() => setStep('form')}
               >
