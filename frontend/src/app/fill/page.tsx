@@ -1,8 +1,23 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import styles from "./FillForm.module.css";
 import Link from "next/link";
+
+const PRESETS = {
+  "Sem 6, Yr 3, CCAI B": {
+    theoryCodes: "CG302,CS305,CS313,CS315,CS348,CS394,EC339",
+    theoryTeachers: "Dr. Sufia Rehman,Rahul Ranjan,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Akhlaque Ahmad Khan",
+    labCodes: "CS306,CS314,CS396",
+    labTeachers: "Falak Alam,Naziya Anjum,Mr. Sunil Singh",
+    mentorDept: "Computer Science",
+    mentorName: "Nida Khan",
+    teachingCodes: "CG302,CS305,CS303,CS306,CS313,CS315,CS348,CS394,CS396,EC339",
+    teachingTeachers: "Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan",
+    feedbackOption: "Always"
+  }
+};
 
 type LogEntry = {
   id: string;
@@ -33,6 +48,22 @@ export default function FillPage() {
   const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  // Persistence logic
+  useEffect(() => {
+    const saved = localStorage.getItem('feedback_bot_config');
+    if (saved) {
+      try {
+        setFormData(prev => ({ ...prev, ...JSON.parse(saved) }));
+      } catch (e) {
+        console.error("Failed to load saved config");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('feedback_bot_config', JSON.stringify(formData));
+  }, [formData]);
+
   useEffect(() => {
     if (logEndRef.current) {
       logEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -56,6 +87,17 @@ export default function FillPage() {
       return () => observer.disconnect();
     }
   }, [step]);
+
+  const handleLoadPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const presetName = e.target.value;
+    if (presetName && PRESETS[presetName as keyof typeof PRESETS]) {
+      setFormData(prev => ({
+        ...prev,
+        ...PRESETS[presetName as keyof typeof PRESETS]
+      }));
+      addLog(`Preset "${presetName}" loaded into Matrix.`, "success");
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -203,6 +245,26 @@ export default function FillPage() {
                   onChange={handleInputChange}
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Section 1.5: Presets */}
+          <div className={`${styles.section} ${styles.sectionVisible} glass`}>
+            <div className={styles.sectionTitle}>
+              <span>RAPID CONFIGURATION</span>
+            </div>
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Load System Preset</label>
+              <select 
+                className={styles.select}
+                onChange={handleLoadPreset}
+                defaultValue=""
+              >
+                <option value="" disabled>Select a preset to auto-fill...</option>
+                {Object.keys(PRESETS).map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -361,7 +423,52 @@ export default function FillPage() {
             </div>
           </div>
 
-          <div className={styles.dashboardGrid}>
+          <div className={styles.dashboardLayout}>
+            {/* Upper Window: Browser View */}
+            <div className={styles.browserSection}>
+              <div className={styles.browserView}>
+                <div className={styles.liveOverlay}>LIVE_REMOTE_VIEW</div>
+                {liveScreenshot ? (
+                  <img 
+                    src={liveScreenshot} 
+                    alt="Remote View" 
+                    className={`${styles.liveViewImage} ${isCaptchaRequired ? styles.zoomed : ''}`}
+                  />
+                ) : (
+                  <div style={{ color: '#333', fontSize: '0.8rem', letterSpacing: '4px' }}>
+                    WAITING_FOR_DATA_STREAM...
+                  </div>
+                )}
+              </div>
+
+              {/* Detached CAPTCHA Controls */}
+              <AnimatePresence>
+                {isCaptchaRequired && (
+                  <motion.div 
+                    className={styles.instructionBox}
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                  >
+                    <h3 style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontSize: '1rem' }}>ACTION REQUIRED</h3>
+                    <p style={{ color: '#ccc', fontSize: '0.85rem', textAlign: 'center' }}>
+                      Manual verification detected. Please solve the CAPTCHA in the view above.
+                      <br/>
+                      <span style={{ color: 'var(--secondary)', fontWeight: 700 }}>Press button ONLY once page is fully loaded.</span>
+                    </p>
+                    <button 
+                      className="btn-primary" 
+                      style={{ fontSize: '0.9rem', padding: '0.75rem 2rem' }}
+                      onClick={handleCaptchaSolved}
+                    >
+                      I'VE SOLVED IT
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Bottom Window: Log Stream */}
             <div className={styles.logStream}>
               {logs.map(log => (
                 <div key={log.id} className={styles.logEntry}>
@@ -375,35 +482,6 @@ export default function FillPage() {
                 </div>
               ))}
               <div ref={logEndRef} />
-            </div>
-
-            <div className={styles.browserView}>
-              <div className={styles.liveOverlay}>LIVE_REMOTE_VIEW</div>
-              {liveScreenshot ? (
-                <img 
-                  src={liveScreenshot} 
-                  alt="Remote View" 
-                  className={styles.liveViewImage}
-                />
-              ) : (
-                <div style={{ color: '#333', fontSize: '0.8rem', letterSpacing: '4px' }}>
-                  WAITING_FOR_DATA_STREAM...
-                </div>
-              )}
-
-              {isCaptchaRequired && (
-                <div className={styles.captchaPrompt}>
-                  <h3 style={{ color: 'var(--primary)', marginBottom: '1rem' }}>ACTION REQUIRED</h3>
-                  <p style={{ marginBottom: '1.5rem', fontSize: '0.9rem' }}>Solve CAPTCHA in remote window.</p>
-                  <button 
-                    className="btn-primary" 
-                    style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}
-                    onClick={handleCaptchaSolved}
-                  >
-                    I've Solved IT
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>
