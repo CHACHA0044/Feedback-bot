@@ -23,7 +23,7 @@ type LogEntry = {
   id: string;
   time: string;
   msg: string;
-  type: 'info' | 'success' | 'error' | 'action';
+  type: 'info' | 'success' | 'error' | 'action' | 'warning';
 };
 
 const CONFIG_STORAGE_KEY = 'feedback_bot_config';
