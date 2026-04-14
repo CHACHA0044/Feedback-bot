@@ -29,11 +29,15 @@
 }
 
 @media (max-width: 600px) {
-  .fullText {
+  .fullText, .logoAlt, .logoDot, .status {
     display: none;
   }
   .shortText {
     display: inline;
+    font-size: 1.25rem;
+  }
+  .nav {
+    padding: 1rem;
   }
 }
 

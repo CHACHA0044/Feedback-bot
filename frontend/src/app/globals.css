@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
 :root {
   --background: #000000;
   --foreground: #ffffff;
@@ -13,17 +15,32 @@
   --font-geist-sans: "Geist", sans-serif;
   --font-geist-mono: "Geist Mono", monospace;
   --font-robotic: "Orbitron", sans-serif;
-  --font-custom: "Frijole", cursive;
+  --font-custom: "Luckiest Guy", cursive;
 }
 
-@font-face {
-  font-family: 'Orbitron';
-  src: url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-touch-callout: none !important;
+  outline: none !important;
 }
 
-@font-face {
-  font-family: 'Frijole';
-  src: url('https://fonts.googleapis.com/css2?family=Frijole&display=swap');
+/* Remove blue layer and background shifts on tap */
+button, a, [role="button"], span, div {
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-tap-highlight-color: rgba(0,0,0,0) !important;
+}
+
+button:active, 
+button:focus,
+a:active, 
+a:focus,
+[role="button"]:active {
+  outline: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -38,12 +55,6 @@ h1, h2, h3, h4, h5, h6 {
 
 .font-frijole {
   font-family: var(--font-custom);
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
 }
 
 html,
