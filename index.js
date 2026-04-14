@@ -396,16 +396,20 @@ function parseConfiguration(config = {}) {
   const teachingTeachers = config.teachingTeachers || config.TEACHING_TEACHERS || envTeachingTea;
 
   const isLocal = !envEnv || envEnv.toLowerCase() === 'local';
+  const pageZoom = config.PAGE_ZOOM || process.env.PAGE_ZOOM || '80';
 
-  // Helper for mapping
-  const createMapFromStrings = (subStr, teaStr) => {
+  // Helper for creating ordered pair lists instead of maps (preserves duplicates)
+  const createPairList = (subStr, teaStr) => {
     const subjects = parseEnvList(subStr);
     const teachers = parseEnvList(teaStr);
-    const map = {};
+    const list = [];
     subjects.forEach((sub, idx) => {
-      map[sub] = teachers[idx] || "";
+      list.push({
+        subject: sub,
+        teacher: teachers[idx] || ""
+      });
     });
-    return map;
+    return list;
   };
 
   return {
@@ -414,10 +418,11 @@ function parseConfiguration(config = {}) {
     feedbackOption,
     mentorDept,
     mentorName,
-    theoryMap: createMapFromStrings(theorySubjects, theoryTeachers),
-    labMap: createMapFromStrings(labSubjects, labTeachers),
-    teachingMap: createMapFromStrings(teachingSubjects, teachingTeachers),
-    isLocal
+    theoryList: createPairList(theorySubjects, theoryTeachers),
+    labList: createPairList(labSubjects, labTeachers),
+    teachingList: createPairList(teachingSubjects, teachingTeachers),
+    isLocal,
+    pageZoom
   };
 }
 
@@ -1061,57 +1066,85 @@ async function getAllAvailableOptions(page, selectId) {
   }, selectId);
 }
 
-async function findSubjectOption(page, selectId, subjectCode) {
-  log.action(`Searching for subject: "${subjectCode}"`, 2);
+function normalizeName(name) {
+  if (!name) return "";
+  return name
+    .toLowerCase()
+    .replace(/\b(dr|prof|mr|mrs|ms|er|md)\.?\s+/g, "") // Remove titles
+    .replace(/\./g, " ")                       // Remove dots
+    .replace(/\s+/g, " ")                      // Normalize spaces
+    .trim();
+}
 
-  const result = await page.evaluate((id, code) => {
+async function smartMatchDropdown(page, selectId, targetText, typeLabel = "ITEM") {
+  const normTarget = normalizeName(targetText);
+  const targetTokens = normTarget.split(" ").filter(t => t.length > 0);
+
+  log.action(`[${typeLabel} MATCH]`, 2);
+  log.detail(`Input: "${targetText}"`, 3);
+
+  const result = await page.evaluate((id, target, tokens) => {
     const select = document.querySelector(id);
-    if (!select) return { found: false, error: "Dropdown not found" };
+    if (!select) return { found: false, error: "Dropdown not identified" };
 
-    const options = Array.from(select.options);
+    const options = Array.from(select.options)
+      .filter(opt => opt.value && opt.value !== "0" && opt.value !== "-1")
+      .map(opt => ({
+        value: opt.value,
+        text: opt.textContent.trim()
+      }));
 
-    // Try exact match first
-    let option = options.find(opt =>
-      opt.value && opt.value.toUpperCase() === code.toUpperCase()
-    );
+    if (options.length === 0) return { found: false, error: "Dropdown empty", options: [] };
 
-    // Try partial match in value
-    if (!option) {
-      option = options.find(opt =>
-        opt.value && opt.value.toUpperCase().includes(code.toUpperCase())
-      );
+    // Function to normalize inside browser context
+    const norm = (s) => s.toLowerCase().replace(/\b(dr|prof|mr|mrs|ms|er|md)\.?\s+/g, "").replace(/\./g, " ").replace(/\s+/g, " ").trim();
+
+    // 1. Exact Normalized Match
+    let match = options.find(opt => norm(opt.text) === target);
+    if (match) return { found: true, strategy: "Exact Normalized Match", match, options };
+
+    // 2. Token Set Match (All target tokens exist in option)
+    if (tokens.length > 0) {
+      match = options.find(opt => {
+        const optNorm = norm(opt.text);
+        return tokens.every(token => optNorm.includes(token));
+      });
+      if (match) return { found: true, strategy: "Exact Token Set Match", match, options };
     }
 
-    // Try matching in text content
-    if (!option) {
-      option = options.find(opt =>
-        opt.textContent && opt.textContent.toUpperCase().includes(code.toUpperCase())
-      );
-    }
+    // 3. Significance Toggle (Fallback partial match)
+    match = options.find(opt => {
+      const optNorm = norm(opt.text);
+      const optTokens = optNorm.split(" ");
+      const intersection = tokens.filter(t => optTokens.includes(t));
+      const confidence = intersection.length / Math.max(tokens.length, optTokens.length);
+      return confidence >= 0.8;
+    });
+    if (match) return { found: true, strategy: "Fuzzy Logic Match (>80%)", match, options };
 
-    if (option) {
-      return {
-        found: true,
-        value: option.value,
-        text: option.textContent.trim()
-      };
-    }
+    return { found: false, error: "No confident match found", options };
+  }, selectId, normTarget, targetTokens);
 
-    return {
-      found: false,
-      error: "Subject not found in dropdown",
-      availableCount: options.length - 1
-    };
-  }, selectId, subjectCode);
-
-  if (result.found) {
-    log.success(`Found: "${result.text}"`, 2);
-  } else {
-    log.error(`${result.error} (${result.availableCount} options available)`, 2);
+  if (!result.found) {
+    log.error(`${result.error}`, 2);
+    log.detail(`Available options: ${result.options?.slice(0, 10).map(o => o.text).join(", ") || "None"}`, 3);
+    throw new Error(`[CRITICAL] Could not identify ${typeLabel}: "${targetText}"`);
   }
 
-  return result.found ? result : null;
+  log.success(`Matched: "${result.match.text}"`, 2);
+  log.detail(`Strategy: ${result.strategy}`, 3);
+  return result.match;
 }
+
+async function findSubjectOption(page, selectId, subjectCode) {
+  try {
+    const match = await smartMatchDropdown(page, selectId, subjectCode, "SUBJECT");
+    return { found: true, value: match.value, text: match.text };
+  } catch (e) {
+    return null;
+  }
+}
+
 async function checkForAlreadySubmittedAlert(page, timeoutMs = 2000) {
   return new Promise((resolve) => {
     let timeoutId = null;
@@ -1155,70 +1188,14 @@ async function checkForAlreadySubmittedAlert(page, timeoutMs = 2000) {
     }, timeoutMs);
   });
 }
+
 async function findTeacherOption(page, selectId, teacherName) {
-  log.action(`Searching for teacher: "${teacherName}"`, 2);
-
-  const result = await page.evaluate((id, name) => {
-    const select = document.querySelector(id);
-    if (!select) return { found: false, error: "Dropdown not found" };
-
-    const options = Array.from(select.options);
-    const nameParts = name.toLowerCase().trim().split(' ').filter(p => p);
-
-    // Try exact match
-    let option = options.find(opt => {
-      if (!opt.value) return false;
-      const optText = opt.textContent.toLowerCase();
-      const optValue = opt.value.toLowerCase();
-      return optText === name.toLowerCase() || optValue === name.toLowerCase();
-    });
-
-    // Try matching all name parts
-    if (!option) {
-      option = options.find(opt => {
-        if (!opt.value) return false;
-        const optText = opt.textContent.toLowerCase();
-        const optValue = opt.value.toLowerCase();
-        return nameParts.every(part =>
-          optText.includes(part) || optValue.includes(part)
-        );
-      });
-    }
-
-    // Try matching any significant name part
-    if (!option && nameParts.length > 0) {
-      option = options.find(opt => {
-        if (!opt.value) return false;
-        const optText = opt.textContent.toLowerCase();
-        const optValue = opt.value.toLowerCase();
-        return nameParts.some(part =>
-          part.length > 2 && (optText.includes(part) || optValue.includes(part))
-        );
-      });
-    }
-
-    if (option) {
-      return {
-        found: true,
-        value: option.value,
-        text: option.textContent.trim()
-      };
-    }
-
-    return {
-      found: false,
-      error: "Teacher not found in dropdown",
-      availableCount: options.length - 1
-    };
-  }, selectId, teacherName);
-
-  if (result.found) {
-    log.success(`Found: "${result.text}"`, 2);
-  } else {
-    log.error(`${result.error} (${result.availableCount} options available)`, 2);
+  try {
+    const match = await smartMatchDropdown(page, selectId, teacherName, "TEACHER");
+    return { found: true, value: match.value, text: match.text };
+  } catch (e) {
+    return null;
   }
-
-  return result.found ? result : null;
 }
 
 async function navigateToPage(page, pageName) {
@@ -1597,46 +1574,16 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
       }));
     }, '#ContentPlaceHolder1_ddldept');
 
-    const deptMatch = deptOptions.find(opt =>
-      opt.text.toLowerCase().includes(dept.toLowerCase()) ||
-      opt.value.toLowerCase().includes(dept.toLowerCase())
-    );
-
-    if (!deptMatch) {
-      log.error(`❌ Department not found`, 2);
-      stats.totalFailed++;
-      return false;
-    }
-
+    const deptMatch = await smartMatchDropdown(page, '#ContentPlaceHolder1_ddldept', dept, "DEPARTMENT");
     await page.select("#ContentPlaceHolder1_ddldept", deptMatch.value);
-    log.detail(`✓ Department: ${deptMatch.text}`);
+    log.detail(`✓ Selected: ${deptMatch.text}`);
     await delay(1500);
 
     await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
+    const mentorMatch = await smartMatchDropdown(page, '#ContentPlaceHolder1_ddlTeacherCode', name, "MENTOR");
 
-    const teacherOptions = await page.evaluate((selectId) => {
-      const select = document.querySelector(selectId);
-      if (!select) return [];
-      return Array.from(select.options).map(opt => ({
-        value: opt.value,
-        text: opt.textContent.trim()
-      }));
-    }, '#ContentPlaceHolder1_ddlTeacherCode');
-
-    const teacherMatch = teacherOptions.find(opt => {
-      const nameParts = name.toLowerCase().split(' ').filter(p => p);
-      const optText = opt.text.toLowerCase();
-      return nameParts.some(part => optText.includes(part));
-    });
-
-    if (!teacherMatch) {
-      log.error(`❌ Mentor not found`, 2);
-      stats.totalFailed++;
-      return false;
-    }
-
-    await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacherMatch.value);
-    log.detail(`✓ Mentor: ${teacherMatch.text}`);
+    await page.select("#ContentPlaceHolder1_ddlTeacherCode", mentorMatch.value);
+    log.detail(`✓ Selected: ${mentorMatch.text}`);
     await delay(1000);
 
     // Check for duplicate after selection (via global dialog handler flag)
@@ -1820,10 +1767,10 @@ async function run(inputConfig = {}, ip = 'local') {
     const config = parseConfiguration(inputConfig);
   const { 
     enrollmentNo, password, feedbackOption, mentorDept, mentorName, 
-    theoryMap, labMap, teachingMap 
+    theoryList, labList, teachingList, pageZoom
   } = config;
 
-  // Validate required fields (Credentials now optional for privacy-mode)
+  // Validate required fields
   if (!feedbackOption) {
     throw new Error("❌ Missing required configuration (Feedback Option)");
   }
@@ -1837,10 +1784,11 @@ async function run(inputConfig = {}, ip = 'local') {
   log.info("Configuration loaded successfully");
   log.detail(`Mode: ${IS_LOCAL ? 'LOCAL (Testing)' : 'PRODUCTION (Live Site)'}`);
   log.detail(`Feedback Option: ${feedbackOption}`);
-  log.detail(`Theory Subjects: ${Object.keys(theoryMap).length}`);
-  log.detail(`Lab Subjects: ${Object.keys(labMap).length}`);
-  log.detail(`Teaching Subjects: ${Object.keys(teachingMap).length}`);
+  log.detail(`Theory Subjects: ${theoryList.length}`);
+  log.detail(`Lab Subjects: ${labList.length}`);
+  log.detail(`Teaching Subjects: ${teachingList.length}`);
   log.detail(`Mentor Feedback: ${mentorDept && mentorName ? 'Yes' : 'No'}`);
+  log.detail(`Applied Zoom: ${pageZoom}%`);
 
   log.section("🌐 LAUNCHING BROWSER");
   const browser = await puppeteer.launch({
@@ -1993,6 +1941,11 @@ async function run(inputConfig = {}, ip = 'local') {
 
   log.success("Proceeding after manual login... ✓");
 
+  await page.evaluate((zoom) => {
+    document.body.style.zoom = zoom + "%";
+  }, pageZoom);
+  log.info(`Auto-zoom adjustment confirmed: ${pageZoom}%`, 2);
+
   await ensurePageVisible(page);
   log.success("Login successful! ✓");
 
@@ -2087,18 +2040,19 @@ async function run(inputConfig = {}, ip = 'local') {
 
   // ============= THEORY FEEDBACK =============
   broadcast({ type: 'status_update', msg: 'PHASE: Theory Feedback' });
-  if (Object.keys(theoryMap).length > 0) {
+  if (theoryList.length > 0) {
     log.section("📘 THEORY FEEDBACK SUBMISSION");
-    log.info(`${Object.keys(theoryMap).length} theory subject(s) to process\n`);
+    log.info(`${theoryList.length} theory subject(s) to process\n`);
 
     let index = 0;
-    for (const [subjectCode, teacherName] of Object.entries(theoryMap)) {
+    for (const item of theoryList) {
       throwIfRunAborted();
       index++;
+      const { subject: subjectCode, teacher: teacherName } = item;
 
-      log.subsection("📝", `Theory ${index}/${Object.keys(theoryMap).length}: ${subjectCode}`);
+      log.subsection("📝", `Theory ${index}/${theoryList.length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      broadcast({ type: 'status_update', msg: `Theory ${index}/${Object.keys(theoryMap).length}: ${subjectCode} — ${teacherName || 'N/A'}` });
+      broadcast({ type: 'status_update', msg: `Theory ${index}/${theoryList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
 
       const result = await submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption);
 
@@ -2113,24 +2067,25 @@ async function run(inputConfig = {}, ip = 'local') {
         log.error(`Failed ✗\n`);
       }
 
-      await delay(1000); // Longer delay between submissions
+      await delay(1000); 
     }
   }
 
   // ============= LAB FEEDBACK =============
   broadcast({ type: 'status_update', msg: 'PHASE: Lab Feedback' });
-  if (Object.keys(labMap).length > 0) {
+  if (labList.length > 0) {
     log.section("🧪 LAB FEEDBACK SUBMISSION");
-    log.info(`${Object.keys(labMap).length} lab subject(s) to process\n`);
+    log.info(`${labList.length} lab subject(s) to process\n`);
 
     let index = 0;
-    for (const [subjectCode, teacherName] of Object.entries(labMap)) {
+    for (const item of labList) {
       throwIfRunAborted();
       index++;
+      const { subject: subjectCode, teacher: teacherName } = item;
 
-      log.subsection("📝", `Lab ${index}/${Object.keys(labMap).length}: ${subjectCode}`);
+      log.subsection("📝", `Lab ${index}/${labList.length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      broadcast({ type: 'status_update', msg: `Lab ${index}/${Object.keys(labMap).length}: ${subjectCode} — ${teacherName || 'N/A'}` });
+      broadcast({ type: 'status_update', msg: `Lab ${index}/${labList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
 
       const result = await submitLabFeedback(page, subjectCode, teacherName, feedbackOption);
 
@@ -2174,18 +2129,19 @@ async function run(inputConfig = {}, ip = 'local') {
 
   // ============= TEACHING FEEDBACK =============
   broadcast({ type: 'status_update', msg: 'PHASE: Teaching & Learning Feedback' });
-  if (Object.keys(teachingMap).length > 0) {
+  if (teachingList.length > 0) {
     log.section("📖 TEACHING & LEARNING FEEDBACK");
-    log.info(`${Object.keys(teachingMap).length} teaching subject(s) to process\n`);
+    log.info(`${teachingList.length} teaching subject(s) to process\n`);
 
     let index = 0;
-    for (const [subjectCode, teacherName] of Object.entries(teachingMap)) {
+    for (const item of teachingList) {
       throwIfRunAborted();
       index++;
+      const { subject: subjectCode, teacher: teacherName } = item;
 
-      log.subsection("📝", `Teaching ${index}/${Object.keys(teachingMap).length}: ${subjectCode}`);
+      log.subsection("📝", `Teaching ${index}/${teachingList.length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      broadcast({ type: 'status_update', msg: `Teaching ${index}/${Object.keys(teachingMap).length}: ${subjectCode} — ${teacherName || 'N/A'}` });
+      broadcast({ type: 'status_update', msg: `Teaching ${index}/${teachingList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
 
       const result = await submitTeachingFeedback(page, subjectCode, teacherName, feedbackOption);
 
@@ -2238,12 +2194,23 @@ async function run(inputConfig = {}, ip = 'local') {
   📋 Total Forms Processed:   ${stats.totalSubmissions + stats.totalFailed + stats.totalSkipped}
   
   BREAKDOWN BY CATEGORY:
-  • Theory Subjects:          ${Object.keys(theoryMap).length} configured
-  • Lab Subjects:             ${Object.keys(labMap).length} configured
+  • Theory Subjects:          ${theoryList.length} configured
+  • Lab Subjects:             ${labList.length} configured
   • Mentor Feedback:          ${mentorDept && mentorName ? '1' : '0'} configured
-  • Teaching & Learning:      ${Object.keys(teachingMap).length} configured
+  • Teaching & Learning:      ${teachingList.length} configured
   ${"-".repeat(70)}
   `);
+
+  broadcast(ip, {
+    type: 'run_complete_summary',
+    data: {
+      success: stats.totalSubmissions,
+      errors: stats.totalFailed,
+      skipped: stats.totalSkipped,
+      duplicates: stats.duplicateAttempts.length,
+      duration: formatDuration(duration)
+    }
+  });
 
   // Show missing env data
   if (stats.missingEnvData.length > 0) {

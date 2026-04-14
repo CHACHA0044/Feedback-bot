@@ -84,6 +84,13 @@ export default function OpPage() {
   const [isHoveringBrowser, setIsHoveringBrowser] = useState(false);
   const [requestEmail, setRequestEmail] = useState('');
   const [isSendingPreset, setIsSendingPreset] = useState(false);
+  const [summary, setSummary] = useState<{
+    success: number;
+    errors: number;
+    skipped: number;
+    duplicates: number;
+    duration: string;
+  } | null>(null);
 
   const showNotif = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
     setStatusNotif({ msg, type });
@@ -360,6 +367,9 @@ export default function OpPage() {
           setIsPageLoaded(true);
           setIsZoomed(true);
         }
+      } else if (data.type === 'run_complete_summary') {
+        setSummary(data.data);
+        addLog("Summary report generated.", "success");
       } else if (data.type === 'screenshot') {
         setLiveScreenshot(data.data);
       } else if (data.type === 'captcha_required') {
@@ -373,7 +383,7 @@ export default function OpPage() {
           setCrtState('off');
           clearRunState('completed');
           closeStream();
-          setTimeout(() => setStep('done'), 900);
+          // No longer auto-switching to 'done' step immediately, summary will show
         }
         if (data.msg === 'PROCESS_TERMINATED' || data.msg === 'TERMINATING_ALL_PROCESSES') {
           setIsKilled(true);
@@ -438,6 +448,7 @@ export default function OpPage() {
     setLogs([]); // Clear logs on trigger
     setLiveScreenshot(null); // Wipe outdated visual frame fully
     setIsPageLoaded(false); // Reset page mask
+    setSummary(null); // Reset summary
     setStep('executing');
     setIsKilled(false);
     setCrtState('on_boot');
@@ -709,8 +720,20 @@ export default function OpPage() {
             MISSION COMPLETE
           </div>
           <p className={styles.subtitle}>All feedback protocols have been executed successfully.</p>
-          <div style={{ marginTop: '3rem' }}>
-            <Link href="/" className="btn-primary" style={{ padding: '1.2rem 3rem' }}>Return to Base</Link>
+          <div className={styles.summaryActions}>
+            <button 
+              onClick={() => {
+                setStep('form');
+                setSummary(null);
+                setLogs([]);
+                setProgress(0);
+              }}
+              className="btn-primary" 
+              style={{ padding: '1.2rem 3rem' }}
+            >
+              Restart Protocol
+            </button>
+            <Link href="/" className="btn-secondary" style={{ padding: '1.2rem 3rem', marginLeft: '1rem' }}>Return to Base</Link>
           </div>
         </div>
       </div>
@@ -1236,75 +1259,133 @@ export default function OpPage() {
             </div>
 
             <div className={styles.controlSection}>
-              <div className={styles.logStream} ref={logContainerRef} onScroll={handleLogScroll}>
-                {logs.map(log => {
-                  const toLow = log.msg.toLowerCase();
-                  const isGold = toLow.includes('completed') || 
-                                 toLow.includes('starting task') ||
-                                 toLow.includes('%') || 
-                                 toLow.includes('feedback') || 
-                                 toLow.includes('mentor') || 
-                                 toLow.includes('subject') ||
-                                 toLow.includes('submitted') ||
-                                 toLow.includes('submission');
-
-                  return (
-                    <div key={log.id} className={styles.logEntry}>
-                      <span className={styles.logTime}>[{log.time}]</span>
-                      <span 
-                        className={`${styles.logMsg} ${styles[log.type]}`} 
-                        style={isGold && log.type !== 'error' ? { color: '#f0c33c', fontWeight: 'bold' } : {}}
-                      >
-                        {log.type === 'action' && '▶ '}
-                        {log.type === 'success' && '✓ '}
-                        {log.type === 'error' && '⚠ '}
-                        {log.msg}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {!isKilled && (
-                <motion.div
-                  className={styles.commandDeck}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+              {summary ? (
+                <motion.div 
+                  className={styles.summaryCard}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
                 >
-                  <div className={styles.commandDeckTitle}>⚙ COMMAND DECK</div>
-                  <div className={styles.commandDeckRow}>
-                    {isCaptchaRequired && (
-                      <button
-                        onClick={handleCaptchaSolved}
-                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
-                        style={{ borderStyle: 'dashed', background: 'rgba(200, 163, 44, 0.15)' }}
-                      >
-                        ▶ Continue Protocol
-                      </button>
-                    )}
-                    {isPaused ? (
-                      <button
-                        onClick={ensureResumed}
-                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
-                      >
-                        ▶ Resume Protocol
-                      </button>
-                    ) : (
-                      <button
-                        onClick={ensurePaused}
-                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
-                      >
-                        ⏸ Pause Protocol
-                      </button>
-                    )}
-                    <button
-                      onClick={handleKill}
-                      className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
+                  <div className={styles.summaryHeader}>
+                    <div className={styles.summaryPulse} />
+                    <span>MISSION_COMPLETE_REPORT</span>
+                  </div>
+                  
+                  <div className={styles.summaryGrid}>
+                    <div className={styles.summaryItem}>
+                      <span className={styles.summaryLabel}>SUCCESS_RATE</span>
+                      <span className={styles.summaryValue} style={{ color: '#00ff00' }}>{summary.success}</span>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <span className={styles.summaryLabel}>ERRORS_LOGGED</span>
+                      <span className={styles.summaryValue} style={{ color: '#ff4b4b' }}>{summary.errors}</span>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <span className={styles.summaryLabel}>SKIPPED_ITEMS</span>
+                      <span className={styles.summaryValue}>{summary.skipped}</span>
+                    </div>
+                    <div className={styles.summaryItem}>
+                      <span className={styles.summaryLabel}>DUPLICATES</span>
+                      <span className={styles.summaryValue} style={{ color: 'var(--primary)' }}>{summary.duplicates}</span>
+                    </div>
+                  </div>
+
+                  <div className={styles.summaryDuration}>
+                    <div className={styles.durationLabel}>TOTAL_EXECUTION_TIME</div>
+                    <div className={styles.durationValue}>{summary.duration}</div>
+                  </div>
+
+                  <div className={styles.summaryActions}>
+                    <button 
+                      onClick={() => {
+                        setStep('form');
+                        setSummary(null);
+                        setLogs([]);
+                        setProgress(0);
+                      }}
+                      className={styles.summaryBtnPrimary}
                     >
-                      ⏹ Kill Task
+                      CONTINUE PROTOCOL
                     </button>
+                    <Link href="/" className={styles.summaryBtnSecondary}>
+                      BACK TO BASE
+                    </Link>
                   </div>
                 </motion.div>
+              ) : (
+                <>
+                  <div className={styles.logStream} ref={logContainerRef} onScroll={handleLogScroll}>
+                    {logs.map(log => {
+                      const toLow = log.msg.toLowerCase();
+                      const isGold = toLow.includes('completed') || 
+                                     toLow.includes('starting task') ||
+                                     toLow.includes('%') || 
+                                     toLow.includes('feedback') || 
+                                     toLow.includes('mentor') || 
+                                     toLow.includes('subject') ||
+                                     toLow.includes('submitted') ||
+                                     toLow.includes('submission');
+
+                      return (
+                        <div key={log.id} className={styles.logEntry}>
+                          <span className={styles.logTime}>[{log.time}]</span>
+                          <span 
+                            className={`${styles.logMsg} ${styles[log.type]}`} 
+                            style={isGold && log.type !== 'error' ? { color: '#f0c33c', fontWeight: 'bold' } : {}}
+                          >
+                            {log.type === 'action' && '▶ '}
+                            {log.type === 'success' && '✓ '}
+                            {log.type === 'error' && '⚠ '}
+                            {log.msg}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <div ref={logEndRef} />
+                  </div>
+
+                  {!isKilled && (
+                    <motion.div
+                      className={styles.commandDeck}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                    >
+                      <div className={styles.commandDeckTitle}>⚙ COMMAND DECK</div>
+                      <div className={styles.commandDeckRow}>
+                        {isCaptchaRequired && (
+                          <button
+                            onClick={handleCaptchaSolved}
+                            className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                            style={{ borderStyle: 'dashed', background: 'rgba(200, 163, 44, 0.15)' }}
+                          >
+                            ▶ Continue Protocol
+                          </button>
+                        )}
+                        {isPaused ? (
+                          <button
+                            onClick={ensureResumed}
+                            className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                          >
+                            ▶ Resume Protocol
+                          </button>
+                        ) : (
+                          <button
+                            onClick={ensurePaused}
+                            className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                          >
+                            ⏸ Pause Protocol
+                          </button>
+                        )}
+                        <button
+                          onClick={handleKill}
+                          className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
+                        >
+                          ⏹ Kill Task
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </>
               )}
             </div>
           </div>
