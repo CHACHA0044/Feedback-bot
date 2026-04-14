@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import styles from "./FillForm.module.css";
 import Link from "next/link";
@@ -50,7 +50,11 @@ export default function FillPage() {
   const [currentStatus, setCurrentStatus] = useState<string>("SYSTEM_IDLE");
   const [isPaused, setIsPaused] = useState(false);
   const [isKilled, setIsKilled] = useState(false);
+  const [isGlobalSyncPulse, setIsGlobalSyncPulse] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const interactionQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const latestScreenshotRef = useRef<string | null>(null);
+  const frameRequestRef = useRef<number | null>(null);
 
   // Persistence logic
   useEffect(() => {
@@ -92,21 +96,6 @@ export default function FillPage() {
     }
   }, [step]);
 
-  useEffect(() => {
-    if (step !== 'executing') return;
-
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      const key = e.key;
-      // Allow single characters (including numpad numbers) and specific control keys
-      if (['Enter', 'Tab', 'Backspace', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key) || key.length === 1) {
-        handleKeyPress(key);
-      }
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [step]);
-
   const handleLoadPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const presetName = e.target.value;
     if (presetName && PRESETS[presetName as keyof typeof PRESETS]) {
@@ -114,7 +103,10 @@ export default function FillPage() {
         ...prev,
         ...PRESETS[presetName as keyof typeof PRESETS]
       }));
+      setIsGlobalSyncPulse(true);
+      setTimeout(() => setIsGlobalSyncPulse(false), 900);
       addLog(`Preset "${presetName}" loaded into Matrix.`, "success");
+      addLog("Global synchronization pulse executed.", "action");
     }
   };
 
@@ -132,6 +124,12 @@ export default function FillPage() {
     };
     setLogs(prev => [...prev, newLog]);
   };
+
+  const queueInteraction = useCallback((task: () => Promise<void>) => {
+    interactionQueueRef.current = interactionQueueRef.current
+      .then(task)
+      .catch(() => undefined);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +158,13 @@ export default function FillPage() {
           eventSource.close();
         }
       } else if (data.type === 'screenshot') {
-        setLiveScreenshot(data.data);
+        latestScreenshotRef.current = data.data;
+        if (frameRequestRef.current === null) {
+          frameRequestRef.current = window.requestAnimationFrame(() => {
+            setLiveScreenshot(latestScreenshotRef.current);
+            frameRequestRef.current = null;
+          });
+        }
       } else if (data.type === 'captcha_required') {
         setIsCaptchaRequired(true);
       } else if (data.type === 'status_update') {
@@ -174,6 +178,10 @@ export default function FillPage() {
     };
 
     setProgress(15);
+    const executionPayload = {
+      ...formData,
+      feedbackOption: formData.feedbackOption || 'Always'
+    };
 
     try {
       const response = await fetch(`${backendUrl}/api/execute`, {
@@ -181,7 +189,7 @@ export default function FillPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(executionPayload),
       });
 
       const data = await response.json();
@@ -224,41 +232,92 @@ export default function FillPage() {
     const y = ((e.clientY - rect.top) / rect.height) * 800;  // Assuming 800 base height
 
     try {
-      await fetch(`${backendUrl}/api/interact`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'click', x, y })
+      queueInteraction(async () => {
+        await fetch(`${backendUrl}/api/interact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'click', x, y })
+        });
       });
     } catch (err) {
       console.error("Interaction failed");
     }
   };
 
-  const handleKeyPress = async (key: string) => {
+  const handleKeyPress = useCallback(async (key: string) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    try {
+    queueInteraction(async () => {
       await fetch(`${backendUrl}/api/interact`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'press', key })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "press", key }),
       });
-    } catch (err) {
-      console.error("Key press failed");
-    }
-  };
+    });
+  }, [queueInteraction]);
 
-  const handleType = async (text: string) => {
+  const handleType = useCallback(async (text: string) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    try {
+    queueInteraction(async () => {
       await fetch(`${backendUrl}/api/interact`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'type', text })
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "type", text }),
       });
-    } catch (err) {
-      console.error("Type failed");
-    }
-  };
+    });
+  }, [queueInteraction]);
+
+  useEffect(() => {
+    if (step !== 'executing') return;
+
+    const specialKeyMap: Record<string, string> = {
+      Enter: 'Enter',
+      NumpadEnter: 'Enter',
+      Tab: 'Tab',
+      Backspace: 'Backspace',
+      Escape: 'Escape',
+      ArrowUp: 'ArrowUp',
+      ArrowDown: 'ArrowDown',
+      ArrowLeft: 'ArrowLeft',
+      ArrowRight: 'ArrowRight',
+      Delete: 'Delete',
+      Home: 'Home',
+      End: 'End'
+    };
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+
+      const numpadDigit = /^Numpad([0-9])$/.exec(e.code);
+      if (numpadDigit) {
+        e.preventDefault();
+        void handleType(numpadDigit[1]);
+        return;
+      }
+
+      const mappedSpecial = specialKeyMap[e.code] || specialKeyMap[e.key];
+      if (mappedSpecial) {
+        e.preventDefault();
+        void handleKeyPress(mappedSpecial);
+        return;
+      }
+
+      if (e.key.length === 1) {
+        e.preventDefault();
+        void handleType(e.key);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [step, handleKeyPress, handleType]);
+
+  useEffect(() => {
+    return () => {
+      if (frameRequestRef.current !== null) {
+        cancelAnimationFrame(frameRequestRef.current);
+      }
+    };
+  }, []);
 
   const handlePause = async () => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
@@ -269,6 +328,18 @@ export default function FillPage() {
       addLog(`SYSTEM: Protocol ${data.isPaused ? 'Paused' : 'Resumed'}`, "action");
     } catch (err) {
       console.error("Pause failed");
+    }
+  };
+
+  const handlePauseProtocol = async () => {
+    if (!isPaused) {
+      await handlePause();
+    }
+  };
+
+  const handleResumeProtocol = async () => {
+    if (isPaused) {
+      await handlePause();
     }
   };
 
@@ -312,7 +383,7 @@ export default function FillPage() {
       </header>
 
       {step === 'form' ? (
-        <form className={styles.form} onSubmit={handleSubmit}>
+        <form className={`${styles.form} ${isGlobalSyncPulse ? styles.globalSyncPulse : ''}`} onSubmit={handleSubmit}>
           {/* Section 01: Uplink Credentials (PRIVATE MODE) */}
           {/* <div className={`${styles.section} glass`}>
             <h2 className={styles.sectionTitle}>Section 01 - Uplink Credentials</h2>
@@ -349,7 +420,12 @@ export default function FillPage() {
             <div className={styles.sectionTitle}>
               <span>Section 01 - Presets</span>
             </div>
-            <div className={styles.inputGroup}>
+            <motion.div
+              className={`${styles.inputGroup} ${styles.glassControl}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35 }}
+            >
               <label className={styles.label}>Load System Preset</label>
               <select
                 className={styles.select}
@@ -361,7 +437,7 @@ export default function FillPage() {
                   <option key={name} value={name}>{name}</option>
                 ))}
               </select>
-            </div>
+            </motion.div>
           </div>
 
           {/* Section 2: Theory */}
@@ -483,7 +559,12 @@ export default function FillPage() {
           {/* Section 6: Feedback Option */}
           <div className={`${styles.section} glass`}>
             <h2 className={styles.sectionTitle}>Section 06 - Sentiment Bias</h2>
-            <div className={styles.inputGroup}>
+            <motion.div
+              className={`${styles.inputGroup} ${styles.glassControl}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.05 }}
+            >
               <label className={styles.label}>Response Strategy</label>
               <select
                 name="feedbackOption"
@@ -497,7 +578,7 @@ export default function FillPage() {
                 <option value="Mostly">Mostly</option>
                 <option value="Always">Always</option>
               </select>
-            </div>
+            </motion.div>
           </div>
 
           <button type="submit" className="btn-primary" style={{ marginTop: '2rem', width: '100%', padding: '1.5rem', fontSize: '1.2rem' }}>
@@ -527,31 +608,40 @@ export default function FillPage() {
                 <div style={{ color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '2px' }}>
                   📡 MISSION_STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : currentStatus)}
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  {!isKilled && (
-                    <>
-                      <button
-                        onClick={handlePause}
-                        style={{ background: isPaused ? 'var(--primary)' : '#222', color: isPaused ? '#000' : '#fff', border: '1px solid var(--primary)', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 'bold' }}
-                      >
-                        {isPaused ? '▶ RESUME' : '⏸ PAUSE'}
-                      </button>
-                      <button
-                        onClick={handleKill}
-                        style={{ background: '#300', color: '#f00', border: '1px solid #f00', padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 'bold' }}
-                      >
-                        ⏹ KILL
-                      </button>
-                    </>
-                  )}
-                  <div style={{ color: '#555', fontSize: '0.65rem', alignSelf: 'center' }}>
-                    UPLINK_SECURE
-                  </div>
+                <div style={{ color: '#555', fontSize: '0.65rem', alignSelf: 'center' }}>
+                  UPLINK_SECURE
                 </div>
               </div>
 
               <div className={styles.browserView}>
                 <div className={styles.liveOverlay}>{isKilled ? 'CONNECTION_LOST' : 'LIVE_REMOTE_VIEW (INTERACTIVE)'}</div>
+                {!isKilled && (
+                  <motion.div
+                    className={styles.commandDeck}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                  >
+                    <div className={styles.commandDeckTitle}>COMMAND DECK</div>
+                    <button
+                      onClick={handlePauseProtocol}
+                      className={`${styles.commandDeckButton} ${isPaused ? styles.commandDeckButtonActive : ''}`}
+                    >
+                      ⏸ Pause Protocol
+                    </button>
+                    <button
+                      onClick={handleResumeProtocol}
+                      className={`${styles.commandDeckButton} ${!isPaused ? styles.commandDeckButtonActive : ''}`}
+                    >
+                      ▶ Resume Protocol
+                    </button>
+                    <button
+                      onClick={handleKill}
+                      className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
+                    >
+                      ⏹ Kill Mission
+                    </button>
+                  </motion.div>
+                )}
                 {(liveScreenshot && !isKilled) ? (
                   <img
                     src={liveScreenshot}
