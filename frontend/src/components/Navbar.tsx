@@ -23,14 +23,11 @@ export default function Navbar() {
           Base
         </Link>
         <Link 
-          href="/fill" 
-          className={`${styles.link} ${pathname === '/fill' ? styles.active : ''}`}
+          href="/op" 
+          className={`${styles.link} ${pathname === '/op' ? styles.active : ''}`}
         >
-          Operation Page
+          Op
         </Link>
-      </div>
-      <div className={styles.status}>
-        <span className={styles.statusPulse}></span> UPLINK_SECURE
       </div>
     </nav>
   );

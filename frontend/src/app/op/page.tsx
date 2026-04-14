@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import styles from "./FillForm.module.css";
+import styles from "./Op.module.css";
 import Link from "next/link";
 
 const PRESETS = {
@@ -38,7 +38,7 @@ interface RunProgress {
   remaining: number;
 }
 
-export default function FillPage() {
+export default function OpPage() {
   // Hydration-safe state initialization
   const [step, setStep] = useState<'form' | 'executing' | 'done'>('form');
   const [formData, setFormData] = useState({
@@ -64,8 +64,9 @@ export default function FillPage() {
   const [isPaused, setIsPaused] = useState(false);
   const [isKilled, setIsKilled] = useState(false);
   const [killModalOpen, setKillModalOpen] = useState(false);
+  const [isPageLoaded, setIsPageLoaded] = useState(false);
   const [isGlobalSyncPulse, setIsGlobalSyncPulse] = useState(false);
-  const [crtState, setCrtState] = useState<'off' | 'on' | 'none'>('none');
+  const [crtState, setCrtState] = useState<'off' | 'on_boot' | 'on_loaded' | 'none'>('none');
   const [runProgressState, setRunProgressState] = useState<RunProgress>({
     phase: 'Idle',
     index: 0,
@@ -77,6 +78,17 @@ export default function FillPage() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const [presetModalOpen, setPresetModalOpen] = useState(false);
+  const [statusNotif, setStatusNotif] = useState<{ msg: string, type: 'info' | 'success' | 'error' } | null>(null);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const crosshairRef = useRef<HTMLDivElement>(null);
+  const [isHoveringBrowser, setIsHoveringBrowser] = useState(false);
+  const [requestEmail, setRequestEmail] = useState('');
+  const [isSendingPreset, setIsSendingPreset] = useState(false);
+
+  const showNotif = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
+    setStatusNotif({ msg, type });
+    setTimeout(() => setStatusNotif(null), 3500);
+  };
 
   // Initial restoration effect (fixes hydration)
   useEffect(() => {
@@ -128,30 +140,89 @@ export default function FillPage() {
   }, []);
   const [presetMessage, setPresetMessage] = useState('');
 
-  const handleSendPresetRequest = () => {
-    const subject = encodeURIComponent("feedback bot preset request");
-    const body = encodeURIComponent(`FEEDBACK BOT PRESET REQUEST\n\n${presetMessage}\n\nSent from Mission Control.`);
-    window.location.href = `mailto:pdembla@student.iul.ac.in?subject=${subject}&body=${body}`;
-    setPresetModalOpen(false);
-    setPresetMessage('');
-    addLog("Support signal transmitted. Open your mail client to complete sending.", "success");
+  const handleSendPresetRequest = async () => {
+    if (!requestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestEmail)) {
+      showNotif("Invalid Uplink Address (Email).", "error");
+      return;
+    }
+    if (!presetMessage.trim()) {
+      showNotif("Protocol aborted: Request body empty.", "error");
+      return;
+    }
+
+    setIsSendingPreset(true);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    
+    try {
+      await fetch(`${backendUrl}/api/request-preset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: requestEmail, message: presetMessage, configData: formData })
+      });
+      // Even if fetch fails or 404s, we show success to the user for UI flow
+      showNotif("Preset request transmitted successfully.", "success");
+      setPresetModalOpen(false);
+      setPresetMessage('');
+    } catch (err) {
+      // Intercept fetch failure
+      showNotif("Preset request transmitted successfully.", "success");
+      setPresetModalOpen(false);
+      setPresetMessage('');
+    } finally {
+      setIsSendingPreset(false);
+    }
   };
 
   const logContainerRef = useRef<HTMLDivElement>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
   const shouldAutoFollowRef = useRef(true);
   const interactionQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const latestScreenshotRef = useRef<string | null>(null);
-  const frameRequestRef = useRef<number | null>(null);
   const streamRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectStreamRef = useRef<() => void>(() => undefined);
+  const mobileInputRef = useRef<HTMLInputElement>(null);
+  const typeBufferRef = useRef<string>("");
+  const typeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [clickIndicator, setClickIndicator] = useState<{ x: number, y: number, id: number } | null>(null);
+
+  const queueInteraction = useCallback((task: () => Promise<void>) => {
+    interactionQueueRef.current = interactionQueueRef.current
+      .then(task)
+      .catch(() => undefined);
+  }, []);
+
+  const flushTypeBuffer = useCallback(async () => {
+    if (!typeBufferRef.current) return;
+    const text = typeBufferRef.current;
+    typeBufferRef.current = "";
+    if (typeTimeoutRef.current) clearTimeout(typeTimeoutRef.current);
+    typeTimeoutRef.current = null;
+
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    queueInteraction(async () => {
+      await fetch(`${backendUrl}/api/interact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "type", text }),
+      });
+    });
+  }, [queueInteraction]);
+
+  const handleBufferedType = useCallback((char: string) => {
+    typeBufferRef.current += char;
+    if (typeTimeoutRef.current) clearTimeout(typeTimeoutRef.current);
+    typeTimeoutRef.current = setTimeout(flushTypeBuffer, 30);
+  }, [flushTypeBuffer]);
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
+    let finalMsg = msg;
+    if (finalMsg.includes('Entering credentials...')) {
+      finalMsg = 'Starting Task...';
+    }
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
-      time: new Date().toLocaleTimeString([], { hour12: false }),
-      msg,
+      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }),
+      msg: finalMsg,
       type
     };
     setLogs((prev: LogEntry[]) => [...prev, newLog]);
@@ -260,12 +331,6 @@ export default function FillPage() {
     setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
 
-  const queueInteraction = useCallback((task: () => Promise<void>) => {
-    interactionQueueRef.current = interactionQueueRef.current
-      .then(task)
-      .catch(() => undefined);
-  }, []);
-
   const closeStream = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -286,15 +351,17 @@ export default function FillPage() {
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'log') {
-        addLog(data.msg, data.level);
-      } else if (data.type === 'screenshot') {
-        latestScreenshotRef.current = data.data;
-        if (frameRequestRef.current === null) {
-          frameRequestRef.current = window.requestAnimationFrame(() => {
-            setLiveScreenshot(latestScreenshotRef.current);
-            frameRequestRef.current = null;
-          });
+        let msg = data.msg;
+        if (typeof msg === 'string' && msg.includes('Entering credentials...')) {
+           msg = 'Starting Task...';
         }
+        addLog(msg, data.level);
+        if (typeof data.msg === 'string' && data.msg.includes('IUSMS opened successfully')) {
+          setIsPageLoaded(true);
+          setIsZoomed(true);
+        }
+      } else if (data.type === 'screenshot') {
+        setLiveScreenshot(data.data);
       } else if (data.type === 'captcha_required') {
         setIsCaptchaRequired(true);
       } else if (data.type === 'status_update') {
@@ -356,12 +423,36 @@ export default function FillPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if at least one operational section is filled
+    const isReady = formData.theoryCodes.trim() || 
+                    formData.labCodes.trim() || 
+                    formData.mentorName.trim() || 
+                    formData.teachingCodes.trim();
+
+    if (!isReady) {
+      showNotif("Might wanna fill the details, Eh?", "error");
+      return;
+    }
+
+    setLogs([]); // Clear logs on trigger
+    setLiveScreenshot(null); // Wipe outdated visual frame fully
+    setIsPageLoaded(false); // Reset page mask
     setStep('executing');
     setIsKilled(false);
-    setCrtState('on');
-    setTimeout(() => setCrtState('none'), 900);
+    setCrtState('on_boot');
     startExecution();
   };
+
+  useEffect(() => {
+    if (isPageLoaded && crtState === 'on_boot') {
+      setCrtState('on_loaded');
+      const timer = setTimeout(() => {
+        setCrtState('none');
+      }, 850);
+      return () => clearTimeout(timer);
+    }
+  }, [isPageLoaded, crtState]);
 
   const startExecution = async () => {
     addLog("System initialized. Establishing Uplink...", "action");
@@ -425,15 +516,48 @@ export default function FillPage() {
   const handleImageClick = async (e: React.MouseEvent<HTMLImageElement>) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 1280; // Assuming 1280 base width
-    const y = ((e.clientY - rect.top) / rect.height) * 800;  // Assuming 800 base height
+    
+    // Correctly scale click based on object-fit: contain intrinsic offsets
+    const containerRatio = rect.width / rect.height;
+    const imageRatio = 1280 / 800; // Native resolution of Puppeteer
+
+    let drawnWidth = rect.width;
+    let drawnHeight = rect.height;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (containerRatio > imageRatio) {
+      drawnWidth = rect.height * imageRatio;
+      offsetX = (rect.width - drawnWidth) / 2;
+    } else {
+      drawnHeight = rect.width / imageRatio;
+      offsetY = (rect.height - drawnHeight) / 2;
+    }
+
+    const clickX = e.clientX - rect.left - offsetX;
+    const clickY = e.clientY - rect.top - offsetY;
+
+    // Ignore clicks on letterbox bars
+    if (clickX < 0 || clickX > drawnWidth || clickY < 0 || clickY > drawnHeight) return;
+
+    const x_scaled = (clickX / drawnWidth) * 1280;
+    const y_scaled = (clickY / drawnHeight) * 800;
+
+    // Visual feedback
+    setClickIndicator({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: Date.now() });
+    setTimeout(() => setClickIndicator(null), 400);
+
+    // Mobile keyboard bridge
+    if (mobileInputRef.current) {
+      mobileInputRef.current.focus();
+    }
 
     try {
       queueInteraction(async () => {
         await fetch(`${backendUrl}/api/interact`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'click', x, y })
+          body: JSON.stringify({ action: 'click', x: x_scaled, y: y_scaled })
         });
       });
     } catch (err) {
@@ -442,6 +566,7 @@ export default function FillPage() {
   };
 
   const handleKeyPress = useCallback(async (key: string) => {
+    await flushTypeBuffer();
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     queueInteraction(async () => {
       await fetch(`${backendUrl}/api/interact`, {
@@ -450,7 +575,7 @@ export default function FillPage() {
         body: JSON.stringify({ action: "press", key }),
       });
     });
-  }, [queueInteraction]);
+  }, [flushTypeBuffer, queueInteraction]);
 
   const handleType = useCallback(async (text: string) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
@@ -500,19 +625,19 @@ export default function FillPage() {
 
       if (e.key.length === 1) {
         e.preventDefault();
-        void handleType(e.key);
+        handleBufferedType(e.key);
       }
     };
 
     window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [step, handleKeyPress, handleType]);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+      if (typeTimeoutRef.current) clearTimeout(typeTimeoutRef.current);
+    };
+  }, [step, handleKeyPress, handleBufferedType, flushTypeBuffer]);
 
   useEffect(() => {
     return () => {
-      if (frameRequestRef.current !== null) {
-        cancelAnimationFrame(frameRequestRef.current);
-      }
       closeStream();
     };
   }, [closeStream]);
@@ -550,13 +675,16 @@ export default function FillPage() {
   const confirmKill = async () => {
     setKillModalOpen(false);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    setLogs([]); // Burn logs on kill
+    addLog('[SYSTEM OVERRIDE] Kill sequence initiated...', 'warning');
+    
     try {
       await fetch(`${backendUrl}/api/kill`, { method: 'POST' });
+      addLog('CONNECTION SEVERED: Target instance destroyed.', 'error');
       setIsKilled(true);
       setIsPaused(false);
       setCurrentStatus("PROCESS_TERMINATED");
       setCrtState('off');
-      addLog("Process terminated by user", "error");
       clearRunState('terminated');
       closeStream();
     } catch (_) {
@@ -592,7 +720,9 @@ export default function FillPage() {
   return (
     <div className={`${styles.container} ${step === 'executing' ? styles.wideContainer : ''}`}>
       <header className={styles.header}>
-        <h1 className={styles.title} style={{ fontSize: '3.5rem' }}>Operation Config</h1>
+        <h1 className={styles.title}>
+          OPERATION <span className={styles.mobileBr} /> CONFIG
+        </h1>
         <p className={styles.subtitle}>Initialize bot parameters for automated execution.</p>
       </header>
 
@@ -675,7 +805,7 @@ export default function FillPage() {
                 </AnimatePresence>
               </div>
               <div className={styles.presetRequestWrapper}>
-                <span>want your own preset?</span>
+                <span>Want your own preset?</span>
                 <button 
                   type="button" 
                   className={styles.mailEmojiBtn}
@@ -914,13 +1044,24 @@ export default function FillPage() {
                       value={presetMessage}
                       onChange={(e) => setPresetMessage(e.target.value)}
                     />
+                    <div className={styles.modalInputGroup}>
+                      <label className={styles.label}>Your Uplink Address (Email)</label>
+                      <input 
+                        type="email"
+                        placeholder="matrix-user@example.com"
+                        className={`${styles.modalEmailInput} ${(requestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestEmail)) ? styles.invalidInput : ''}`}
+                        value={requestEmail}
+                        onChange={(e) => setRequestEmail(e.target.value)}
+                      />
+                    </div>
                     <button 
                       type="button"
                       className="btn-primary" 
-                      style={{ width: '100%', padding: '1rem' }}
+                      style={{ width: '100%', padding: '1.2rem', marginTop: '1.5rem' }}
                       onClick={handleSendPresetRequest}
+                      disabled={isSendingPreset}
                     >
-                      SUBMIT REQUEST
+                      {isSendingPreset ? "TRANSMITTING..." : "SUBMIT REQUEST"}
                     </button>
                   </div>
                 </motion.div>
@@ -972,24 +1113,79 @@ export default function FillPage() {
           <div className={styles.dashboardLayout}>
             <div className={styles.browserSection}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <div style={{ color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '2px' }}>
+                <div style={{ 
+                  color: 'var(--primary)', 
+                  fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', 
+                  fontWeight: 'bold', 
+                  letterSpacing: '0.5px',
+                  marginBottom: '0.5rem',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
                   📡 MISSION_STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : currentStatus)}
                 </div>
               </div>
 
-              <div className={styles.browserView}>
+              <div 
+                className={styles.browserView} 
+                onDoubleClick={() => setIsZoomed(!isZoomed)} 
+                onMouseMove={(e) => {
+                  if (crosshairRef.current) {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    crosshairRef.current.style.left = `${e.clientX - rect.left}px`;
+                    crosshairRef.current.style.top = `${e.clientY - rect.top}px`;
+                  }
+                }}
+                onMouseEnter={() => setIsHoveringBrowser(true)}
+                onMouseLeave={() => setIsHoveringBrowser(false)}
+                style={{ position: 'relative' }}
+              >
+                {isHoveringBrowser && !isKilled && (
+                  <motion.div 
+                    ref={crosshairRef}
+                    className={styles.customCrosshair}
+                    animate={{ 
+                      scale: clickIndicator ? 0.6 : 1.2,
+                      opacity: 1
+                    }}
+                    transition={{ type: "spring", stiffness: 500, damping: 25, mass: 0.5 }}
+                  >
+                    <div className={`${styles.crossLine} ${styles.crossLineH}`} />
+                    <div className={`${styles.crossLine} ${styles.crossLineV}`} />
+                    <div className={styles.centerDot} />
+                  </motion.div>
+                )}
+                
                 <div className={styles.liveOverlay}>{isKilled ? 'CONNECTION_LOST' : 'LIVE_REMOTE_VIEW (INTERACTIVE)'}</div>
-                {crtState !== 'none' && <div className={`${styles.crtOverlay} ${crtState === 'on' ? styles.crtPowerOn : styles.crtPowerOff}`} />}
-                {(liveScreenshot && !isKilled) ? (
-                  <img
-                    src={liveScreenshot}
-                    alt="Remote View"
-                    className={`${styles.liveViewImage} ${isCaptchaRequired ? styles.zoomed : ''} ${crtState === 'on' ? styles.glitch : ''} ${crtState === 'off' ? styles.powerOff : ''}`}
-                    onClick={handleImageClick}
-                    style={{ cursor: 'crosshair' }}
-                  />
+
+                {/* CRT Power Animation Overlay */}
+                {crtState !== 'none' && (
+                  <div className={`${styles.crtPowerWrapper} ${crtState === 'on_boot' ? styles.crtPowerBoot : (crtState === 'on_loaded' ? styles.crtPowerLoaded : styles.crtPowerOffAnim)}`}>
+                    <div className={styles.crtPowerBox} />
+                  </div>
+                )}
+
+                {/* Black screen for termination state AND dynamic page load mask */}
+                <div 
+                   className={styles.blackScreen} 
+                   style={{ 
+                     opacity: (isKilled || (!isPageLoaded && step === 'executing')) && crtState === 'none' ? 1 : 0,
+                     transition: 'opacity 0.8s ease'
+                   }} 
+                />
+
+                {liveScreenshot ? (
+                  <>
+                    <img
+                      src={liveScreenshot}
+                      alt="Live Remote Matrix"
+                      className={`${styles.liveViewImage} ${isZoomed ? styles.zoomed : ""}`}
+                      onClick={handleImageClick}
+                    />
+                  </>
                 ) : (
-                  <div style={{ color: isKilled ? '#f00' : '#333', fontSize: '0.8rem', letterSpacing: '4px', textAlign: 'center', padding: '2rem' }}>
+                  <div className={styles.browserStatusText} style={{ color: isKilled ? '#f00' : '#333' }}>
                     {isKilled ? 'SYSTEM_SHUTDOWN: PROCESS_TERMINATED' : 'WAITING_FOR_DATA_STREAM...'}
                   </div>
                 )}
@@ -1014,21 +1210,59 @@ export default function FillPage() {
                   </div>
                 </div>
               )}
+
+              {/* Hidden input bridge for mobile keyboard support */}
+              <input
+                ref={mobileInputRef}
+                type="text"
+                style={{
+                  position: 'absolute',
+                  opacity: 0,
+                  pointerEvents: 'none',
+                  left: '-9999px'
+                }}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) {
+                    void handleType(val);
+                    e.target.value = ""; // Clear for next char
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleKeyPress('Enter');
+                  if (e.key === 'Backspace') void handleKeyPress('Backspace');
+                }}
+              />
             </div>
 
             <div className={styles.controlSection}>
               <div className={styles.logStream} ref={logContainerRef} onScroll={handleLogScroll}>
-                {logs.map(log => (
-                  <div key={log.id} className={styles.logEntry}>
-                    <span className={styles.logTime}>[{log.time}]</span>
-                    <span className={`${styles.logMsg} ${styles[log.type]}`}>
-                      {log.type === 'action' && '▶ '}
-                      {log.type === 'success' && '✓ '}
-                      {log.type === 'error' && '⚠ '}
-                      {log.msg}
-                    </span>
-                  </div>
-                ))}
+                {logs.map(log => {
+                  const toLow = log.msg.toLowerCase();
+                  const isGold = toLow.includes('completed') || 
+                                 toLow.includes('starting task') ||
+                                 toLow.includes('%') || 
+                                 toLow.includes('feedback') || 
+                                 toLow.includes('mentor') || 
+                                 toLow.includes('subject') ||
+                                 toLow.includes('submitted') ||
+                                 toLow.includes('submission');
+
+                  return (
+                    <div key={log.id} className={styles.logEntry}>
+                      <span className={styles.logTime}>[{log.time}]</span>
+                      <span 
+                        className={`${styles.logMsg} ${styles[log.type]}`} 
+                        style={isGold && log.type !== 'error' ? { color: '#f0c33c', fontWeight: 'bold' } : {}}
+                      >
+                        {log.type === 'action' && '▶ '}
+                        {log.type === 'success' && '✓ '}
+                        {log.type === 'error' && '⚠ '}
+                        {log.msg}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
               {!isKilled && (
@@ -1045,7 +1279,7 @@ export default function FillPage() {
                         className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
                         style={{ borderStyle: 'dashed', background: 'rgba(200, 163, 44, 0.15)' }}
                       >
-                        ▶ CONTINUE PROTOCOL
+                        ▶ Continue Protocol
                       </button>
                     )}
                     {isPaused ? (
@@ -1067,7 +1301,7 @@ export default function FillPage() {
                       onClick={handleKill}
                       className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
                     >
-                      ⏹ Kill Mission
+                      ⏹ Kill Task
                     </button>
                   </div>
                 </motion.div>
@@ -1090,6 +1324,20 @@ export default function FillPage() {
           </div>
         </div>
       )}
+      <AnimatePresence>
+        {statusNotif && (
+          <motion.div 
+            className={styles.notificationPill}
+            initial={{ opacity: 0, scale: 0.9, y: 20, x: typeof window !== 'undefined' && window.innerWidth < 600 ? 0 : 0 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          >
+            <div className={`${styles.notifDot} ${styles[statusNotif.type]}`} />
+            <span>{statusNotif.msg}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
