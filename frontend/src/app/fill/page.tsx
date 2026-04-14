@@ -331,13 +331,13 @@ export default function FillPage() {
     }
   };
 
-  const handlePauseProtocol = async () => {
+  const ensurePaused = async () => {
     if (!isPaused) {
       await handlePause();
     }
   };
 
-  const handleResumeProtocol = async () => {
+  const ensureResumed = async () => {
     if (isPaused) {
       await handlePause();
     }
@@ -623,13 +623,13 @@ export default function FillPage() {
                   >
                     <div className={styles.commandDeckTitle}>COMMAND DECK</div>
                     <button
-                      onClick={handlePauseProtocol}
+                      onClick={ensurePaused}
                       className={`${styles.commandDeckButton} ${isPaused ? styles.commandDeckButtonActive : ''}`}
                     >
                       ⏸ Pause Protocol
                     </button>
                     <button
-                      onClick={handleResumeProtocol}
+                      onClick={ensureResumed}
                       className={`${styles.commandDeckButton} ${!isPaused ? styles.commandDeckButtonActive : ''}`}
                     >
                       ▶ Resume Protocol
