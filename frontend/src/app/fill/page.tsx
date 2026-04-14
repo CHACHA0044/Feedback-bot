@@ -50,6 +50,7 @@ export default function FillPage() {
   const [currentStatus, setCurrentStatus] = useState<string>("SYSTEM_IDLE");
   const [isPaused, setIsPaused] = useState(false);
   const [isKilled, setIsKilled] = useState(false);
+  const [killModalOpen, setKillModalOpen] = useState(false);
   const [isGlobalSyncPulse, setIsGlobalSyncPulse] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const interactionQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -344,8 +345,11 @@ export default function FillPage() {
   };
 
   const handleKill = async () => {
-    if (!confirm("Are you sure you want to TERMINATE the process? This will close the browser.")) return;
+    setKillModalOpen(true);
+  };
 
+  const confirmKill = async () => {
+    setKillModalOpen(false);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     try {
       await fetch(`${backendUrl}/api/kill`, { method: 'POST' });
@@ -587,6 +591,45 @@ export default function FillPage() {
         </form>
       ) : (
         <div className={styles.executionPanel}>
+          {/* ── In-app Terminate Confirmation Modal ── */}
+          <AnimatePresence>
+            {killModalOpen && (
+              <motion.div
+                className={styles.termModalOverlay}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <motion.div
+                  className={styles.termModal}
+                  initial={{ scale: 0.85, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.85, opacity: 0 }}
+                >
+                  <div className={styles.termModalTitle}>⚠ TERMINATE MISSION?</div>
+                  <p className={styles.termModalBody}>
+                    This will force-close the browser and abort all pending feedback operations.
+                    Confirm to proceed with Emergency Termination.
+                  </p>
+                  <div className={styles.termModalActions}>
+                    <button
+                      className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
+                      onClick={confirmKill}
+                    >
+                      ⏹ CONFIRM TERMINATE
+                    </button>
+                    <button
+                      className={styles.commandDeckButton}
+                      onClick={() => setKillModalOpen(false)}
+                    >
+                      ✕ ABORT
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className={`${styles.progressWrapper} glass`}>
             <div className={styles.progressInfo}>
               <span>REMOTE UPLINK ESTABLISHED</span>
@@ -615,33 +658,6 @@ export default function FillPage() {
 
               <div className={styles.browserView}>
                 <div className={styles.liveOverlay}>{isKilled ? 'CONNECTION_LOST' : 'LIVE_REMOTE_VIEW (INTERACTIVE)'}</div>
-                {!isKilled && (
-                  <motion.div
-                    className={styles.commandDeck}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                  >
-                    <div className={styles.commandDeckTitle}>COMMAND DECK</div>
-                    <button
-                      onClick={ensurePaused}
-                      className={`${styles.commandDeckButton} ${isPaused ? styles.commandDeckButtonActive : ''}`}
-                    >
-                      ⏸ Pause Protocol
-                    </button>
-                    <button
-                      onClick={ensureResumed}
-                      className={`${styles.commandDeckButton} ${!isPaused ? styles.commandDeckButtonActive : ''}`}
-                    >
-                      ▶ Resume Protocol
-                    </button>
-                    <button
-                      onClick={handleKill}
-                      className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
-                    >
-                      ⏹ Kill Mission
-                    </button>
-                  </motion.div>
-                )}
                 {(liveScreenshot && !isKilled) ? (
                   <img
                     src={liveScreenshot}
@@ -666,7 +682,7 @@ export default function FillPage() {
                 </div>
               )}
 
-              {/* Detached CAPTCHA Controls */}
+              {/* Detached CAPTCHA / Manual Login Controls */}
               <AnimatePresence>
                 {isCaptchaRequired && (
                   <motion.div
@@ -695,6 +711,37 @@ export default function FillPage() {
                 )}
               </AnimatePresence>
             </div>
+
+            {/* ── Command Deck — permanently outside the browser viewport ── */}
+            {!isKilled && (
+              <motion.div
+                className={styles.commandDeck}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className={styles.commandDeckTitle}>⚙ COMMAND DECK</div>
+                <div className={styles.commandDeckRow}>
+                  <button
+                    onClick={ensurePaused}
+                    className={`${styles.commandDeckButton} ${isPaused ? styles.commandDeckButtonActive : ''}`}
+                  >
+                    ⏸ Pause Protocol
+                  </button>
+                  <button
+                    onClick={ensureResumed}
+                    className={`${styles.commandDeckButton} ${!isPaused ? styles.commandDeckButtonActive : ''}`}
+                  >
+                    ▶ Resume Protocol
+                  </button>
+                  <button
+                    onClick={handleKill}
+                    className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
+                  >
+                    ⏹ Kill Mission
+                  </button>
+                </div>
+              </motion.div>
+            )}
 
             {/* Bottom Window: Log Stream */}
             <div className={styles.logStream}>
