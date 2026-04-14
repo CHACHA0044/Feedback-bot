@@ -3,6 +3,11 @@
   padding: 4rem 2rem;
   max-width: 900px;
   margin: 0 auto;
+  transition: max-width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.wideContainer {
+  max-width: 1600px;
 }
 
 .header {
@@ -202,10 +207,14 @@
   margin: 0 auto;
 }
 
+.wideExecutionPanel {
+  max-width: 95%;
+}
+
 .dashboardLayout {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 1.25rem;
+  grid-template-columns: 1.25fr 0.85fr;
+  gap: 2.5rem;
   align-items: start;
 }
 
@@ -263,9 +272,9 @@
 .logStream {
   background: #000;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.25rem;
-  height: 400px; /* Specific height for bottom log window */
+  border-radius: 12px;
+  padding: 1.5rem;
+  height: 528px; /* Matching the height of the enlarged browser view */
   overflow-y: auto;
   font-family: var(--font-geist-mono);
   font-size: 0.8rem;
@@ -274,7 +283,7 @@
   gap: 0.4rem;
   scroll-behavior: smooth;
   position: relative;
-  box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.9);
 }
 
 .logStream::after {
@@ -311,7 +320,7 @@
 .logMsg.info { color: #666; }
 
 .browserView {
-  aspect-ratio: 16/9;
+  aspect-ratio: 16/10; /* Better rectangular shape for the enlarged view */
   background: #111;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -320,15 +329,70 @@
   justify-content: center;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 0 40px rgba(0,0,0,0.8);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.8), 0 0 20px rgba(0, 243, 255, 0.05);
 }
 
 .crtOverlay {
   position: absolute;
   inset: 0;
-  z-index: 9;
+  z-index: 10;
   pointer-events: none;
-  background: radial-gradient(circle, rgba(0, 243, 255, 0.35), rgba(0, 0, 0, 0.95) 62%);
+  background: 
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.08), rgba(0, 255, 0, 0.05), rgba(0, 0, 255, 0.08));
+  background-size: 100% 3px, 3px 100%;
+  box-shadow: inset 0 0 120px rgba(0,0,0,0.8);
+  animation: crtFlicker 0.08s infinite alternate-reverse;
+  opacity: 0.25;
+}
+
+.crtOverlay::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.12;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.crtOverlay::before {
+  content: " ";
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+              linear-gradient(90deg, rgba(255, 0, 0, 0.05), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.05));
+  z-index: 2;
+  background-size: 100% 2px, 3px 100%;
+  pointer-events: none;
+}
+
+@keyframes crtFlicker {
+  0% { opacity: 0.27861; }
+  5% { opacity: 0.34769; }
+  10% { opacity: 0.23604; }
+  15% { opacity: 0.90626; }
+  20% { opacity: 0.18128; }
+  25% { opacity: 0.83891; }
+  30% { opacity: 0.65583; }
+  35% { opacity: 0.57807; }
+  40% { opacity: 0.26559; }
+  45% { opacity: 0.84693; }
+  50% { opacity: 0.96019; }
+  55% { opacity: 0.08594; }
+  60% { opacity: 0.20313; }
+  65% { opacity: 0.71988; }
+  70% { opacity: 0.53455; }
+  75% { opacity: 0.37288; }
+  80% { opacity: 0.71428; }
+  85% { opacity: 0.70419; }
+  90% { opacity: 0.7003; }
+  95% { opacity: 0.36108; }
+  100% { opacity: 0.24387; }
 }
 
 .crtPowerOn {
@@ -340,16 +404,20 @@
 }
 
 @keyframes crtPowerOn {
-  0% { transform: scaleX(0.04) scaleY(0.03); opacity: 0.95; }
-  45% { transform: scaleX(1.04) scaleY(0.08); opacity: 0.85; }
-  100% { transform: scaleX(1) scaleY(1); opacity: 0; }
+  0% { transform: scaleY(0.005) scaleX(0); background: #fff; opacity: 1; }
+  30% { transform: scaleY(0.005) scaleX(1); background: #fff; opacity: 1; }
+  60% { transform: scaleY(1) scaleX(1); background: #fff; opacity: 1; }
+  80% { transform: scaleY(1) scaleX(1); background: transparent; opacity: 1; }
+  100% { transform: scaleY(1) scaleX(1); background: transparent; opacity: 0; }
 }
 
 @keyframes crtPowerOff {
-  0% { transform: scaleX(1) scaleY(1); opacity: 0; }
-  35% { transform: scaleX(1) scaleY(0.12); opacity: 0.85; }
-  75% { transform: scaleX(0.12) scaleY(0.03); opacity: 0.95; }
-  100% { transform: scaleX(0.01) scaleY(0.01); opacity: 0; }
+  0% { transform: scaleY(1) scaleX(1); background: transparent; opacity: 1; }
+  20% { transform: scaleY(1) scaleX(1); background: #fff; opacity: 1; }
+  40% { transform: scaleY(0.005) scaleX(1); background: #fff; opacity: 1; }
+  60% { transform: scaleY(0.005) scaleX(0.005); background: #fff; opacity: 1; }
+  80% { transform: scaleY(0.005) scaleX(0); background: #fff; opacity: 1; }
+  100% { transform: scaleY(0.005) scaleX(0); background: #fff; opacity: 0; }
 }
 
 /* Command Deck — horizontal sticky bar, outside and below browser viewport */
@@ -434,15 +502,25 @@
 }
 
 .instructionBox {
-  background: rgba(var(--primary-rgb), 0.1);
-  border: 1px solid var(--primary);
-  border-radius: 12px;
-  padding: 1.5rem;
+  background: #0a0a0a;
+  border: 2px solid var(--primary);
+  border-radius: 8px;
+  padding: 1rem 1.5rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  animation: pulseGlow 2s infinite alternate;
+  gap: 0.5rem;
+  box-shadow: 0 0 20px rgba(200, 163, 44, 0.15);
+  width: fit-content;
+  align-self: center; /* Centered under browser */
+}
+
+.instructionBox p {
+  margin: 0;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: #888;
 }
 
 @keyframes pulseGlow {
@@ -565,23 +643,40 @@
 }
 
 .dropdownTrigger.open {
-  border-radius: 8px 8px 0 0;
   border-color: var(--primary);
 }
 
 .dropdownMenu {
-  position: absolute;
-  top: 100%;
-  left: 0;
+  position: relative;
+  margin-top: 0.5rem;
   width: 100%;
   background: #0d0d0d;
   border: 1px solid var(--primary);
-  border-top: none;
-  border-radius: 0 0 12px 12px;
-  z-index: 100;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  border-radius: 8px;
+  z-index: 10;
+  max-height: 160px;
+  overflow-y: auto;
+  box-shadow: inset 0 0 15px rgba(200, 163, 44, 0.05);
   backdrop-filter: blur(14px);
+}
+
+.dropdownMenu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dropdownMenu::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0 0 12px 0;
+}
+
+.dropdownMenu::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.dropdownMenu::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary);
 }
 
 .dropdownItem {
@@ -762,4 +857,27 @@
 
 .modalClose:hover {
   color: #fff;
+}
+
+.liveViewImage.glitch {
+  animation: streamGlitch 0.3s steps(2, end) infinite;
+  filter: hue-rotate(90deg) brightness(1.2) contrast(1.2);
+}
+
+.liveViewImage.powerOff {
+  animation: streamPowerOff 0.8s ease-in forwards;
+}
+
+@keyframes streamGlitch {
+  0% { transform: translate(2px, 2px); }
+  25% { transform: translate(-2px, -2px); }
+  50% { transform: translate(-2px, 2px); }
+  75% { transform: translate(2px, -2px); }
+  100% { transform: translate(2px, 2px); }
+}
+
+@keyframes streamPowerOff {
+  0% { transform: scaleY(1); filter: brightness(1); }
+  35% { transform: scaleY(0.01) scaleX(1.1); filter: brightness(2); }
+  100% { transform: scaleY(0) scaleX(0); filter: brightness(5); }
 }
