@@ -31,99 +31,80 @@ app.get("/", (req, res) => {
         :root {
           --primary: #f0c33c;
           --primary-glow: rgba(240, 195, 60, 0.4);
+          --accent: #00f3ff;
           --bg: #0a0a0a;
         }
 
         body {
-          margin: 0;
-          padding: 0;
-          background: var(--bg);
-          color: var(--primary);
+          margin: 0; padding: 0; background: var(--bg); color: var(--primary);
           font-family: 'JetBrains Mono', monospace;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          height: 100vh;
-          overflow: hidden;
-          text-transform: uppercase;
+          display: flex; align-items: center; justify-content: center; height: 100vh;
+          overflow: hidden; text-transform: uppercase;
         }
 
         .container {
-          position: relative;
-          padding: 3rem;
-          border: 1px solid var(--primary);
-          box-shadow: 0 0 30px var(--primary-glow), inset 0 0 15px var(--primary-glow);
-          background: rgba(0, 0, 0, 0.8);
-          max-width: 90%;
-          text-align: center;
+          position: relative; padding: 4rem; border: 1px solid var(--primary);
+          box-shadow: 0 0 40px var(--primary-glow), inset 0 0 20px var(--primary-glow);
+          background: rgba(0, 0, 0, 0.9); max-width: 90%; text-align: center;
+          border-radius: 4px; z-index: 5;
         }
 
-        .container::before {
-          content: '';
-          position: absolute;
-          top: -2px; left: -2px; right: -2px; bottom: -2px;
-          background: linear-gradient(45deg, var(--primary), transparent, var(--primary));
-          z-index: -1;
-          opacity: 0.2;
+        .container::after {
+          content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+          background: repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(240, 195, 60, 0.03) 1px, rgba(240, 195, 60, 0.03) 2px);
+          pointer-events: none;
         }
 
         h1 {
-          margin: 0;
-          font-size: 2.5rem;
-          letter-spacing: 0.5rem;
-          text-shadow: 2px 2px 0px #000, 0 0 10px var(--primary-glow);
-          animation: flicker 2s infinite;
+          margin: 0; font-size: 3rem; letter-spacing: 0.8rem;
+          text-shadow: 0 0 15px var(--primary-glow);
+          animation: glitch 3s infinite;
         }
 
-        .status {
-          margin-top: 1.5rem;
-          font-size: 1rem;
-          letter-spacing: 0.2rem;
-          color: #fff;
-          opacity: 0.8;
+        .status { margin-top: 2.5rem; font-size: 1.2rem; letter-spacing: 0.3rem; color: #fff; }
+        .status span { color: #00ff00; animation: blink 1s infinite; text-shadow: 0 0 10px #00ff00; }
+
+        .terminal-text { 
+           margin-top: 2.5rem; font-size: 0.9rem; color: #666; max-width: 450px; 
+           line-height: 1.6; margin-left: auto; margin-right: auto;
         }
 
-        .status span {
-          color: #00ff00;
-          text-shadow: 0 0 5px #00ff00;
+        @keyframes glitch {
+          0% { transform: translate(0); text-shadow: 0 0 15px var(--primary-glow); }
+          2% { transform: translate(-3px, 3px); text-shadow: 3px 0 var(--accent), -3px 0 var(--primary); }
+          4% { transform: translate(3px, -3px); text-shadow: -3px 0 var(--accent), 3px 0 var(--primary); }
+          6% { transform: translate(0); }
+          100% { transform: translate(0); }
         }
 
-        .scanline {
-          position: fixed;
-          top: 0; left: 0; width: 100%; height: 2px;
-          background: rgba(240, 195, 60, 0.05);
-          z-index: 10;
-          pointer-events: none;
-          animation: scan 4s linear infinite;
-        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
-        @keyframes flicker {
-          0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% { opacity: 1; }
-          20%, 21.999%, 63%, 63.999%, 65%, 69.999% { opacity: 0.4; }
-        }
-
-        @keyframes scan {
-          from { transform: translateY(-100%); }
-          to { transform: translateY(100vh); }
+        .scanlines { 
+          position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+          background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), 
+                      linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03)); 
+          z-index: 10; background-size: 100% 2px, 3px 100%; pointer-events: none; 
         }
 
         .version {
-          position: absolute;
-          bottom: 1rem;
-          right: 1.5rem;
-          font-size: 0.7rem;
-          opacity: 0.5;
+          position: absolute; bottom: 1.5rem; right: 2rem; font-size: 0.7rem; color: var(--primary); opacity: 0.4;
         }
       </style>
     </head>
     <body>
-      <div class="scanline"></div>
+      <div class="scanlines"></div>
       <div class="container">
-        <h1>UPLINK_ESTABLISHED</h1>
-        <div class="status">BACKEND_SYSTEM // <span>ONLINE_</span></div>
-        <p style="margin-top: 2rem; font-size: 0.8rem; color: #888;">READY FOR MISSION INITIATION. SECURE CONNECTION ACTIVE.</p>
-        <div class="version">V2.4.0_STABLE</div>
+        <h1>UPLINK_LIVE</h1>
+        <div class="status">FEEDBACK_BOT // STATUS: <span>CONNECTED_</span></div>
+        <div class="terminal-text">
+          Uplink established successfully. Backend systems are synchronized with production infrastructure. 
+          Awaiting mission initiation from dashboard.
+        </div>
+        <div style="margin-top: 3.5rem; font-size: 0.7rem; color: var(--primary); opacity: 0.4; letter-spacing: 0.2rem;">
+          [ SECURE_CORE_IDENTIFIED_CHACHA0044 ]
+        </div>
       </div>
+      <div class="version">V2.4.5_STABLE</div>
     </body>
     </html>
   `);
