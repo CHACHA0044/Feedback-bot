@@ -1614,27 +1614,48 @@ async function run(inputConfig = {}) {
   activePage = page;
   activeBrowser = browser;
   handleNetworkErrors(page);
+
+  // Track new tabs/windows — always update activePage so screenshot loop follows automation
+  const onTargetCreated = async (target) => {
+    if (target.type() === 'page') {
+      try {
+        const newPage = await target.page();
+        if (newPage) {
+          activePage = newPage;
+          handleNetworkErrors(newPage);
+          log.info(`[TAB SWITCH] New tab/window opened — switching live view to new context.`);
+          broadcast({ type: 'status_update', msg: 'TAB_SWITCH: New window focused' });
+        }
+      } catch (e) {
+        // ignore if target already closed
+      }
+    }
+  };
+  browser.on('targetcreated', onTargetCreated);
+
   log.success("Browser launched successfully");
 
-  // Screenshot broadcasting loop - tuned for smoother high-cadence live view
+  // Screenshot broadcasting loop — near-real-time cadence for smooth live manual interaction
   let isCapturingFrame = false;
-  const frameIntervalMs = IS_LOCAL ? 900 : 180;
+  const frameIntervalMs = IS_LOCAL ? 700 : 100;
   const screenshotInterval = setInterval(async () => {
     if (isCapturingFrame) return;
     try {
-      if (browser.isConnected() && !page.isClosed()) {
+      // Always capture from the currently active page so viewer tracks automation
+      const capturePage = activePage || page;
+      if (browser.isConnected() && capturePage && !capturePage.isClosed()) {
         isCapturingFrame = true;
-        const screenshot = await page.screenshot({ 
+        const screenshot = await capturePage.screenshot({ 
           encoding: 'base64',
           type: 'jpeg',
-          quality: IS_LOCAL ? 40 : 45
+          quality: IS_LOCAL ? 50 : 70
         });
         broadcast({ type: 'screenshot', data: `data:image/jpeg;base64,${screenshot}` });
-      } else {
+      } else if (!browser.isConnected()) {
         clearInterval(screenshotInterval);
       }
     } catch (e) {
-      clearInterval(screenshotInterval);
+      // Ignore transient screenshot errors (page navigating); do not clear interval
     } finally {
       isCapturingFrame = false;
     }
@@ -1662,7 +1683,10 @@ async function run(inputConfig = {}) {
     return;
   }
 
-  log.success("Login page loaded");
+  log.success("IUSMS opened successfully.");
+  log.section("🧩 MANUAL LOGIN REQUIRED");
+  log.warning("Manual Login Required.");
+  log.info("Please solve captcha, login, then click Continue Protocol.");
 
   log.action("Entering credentials...");
 
@@ -1677,7 +1701,6 @@ async function run(inputConfig = {}) {
   log.detail(`Enrollment field: ${loginFields.enrollmentSelector}`);
   log.detail(`Password field: ${loginFields.passwordSelector}`);
 
-  log.section("🧩 MANUAL LOGIN REQUIRED");
   const loginMessage = "Please LOGIN manually in the Mission Control view. Once you reach the Dashboard, press SOLVE MATRIX to continue.";
   broadcast({ type: 'status_update', msg: 'Awaiting Manual Login' });
   await waitForEnter(loginMessage, page);
@@ -1756,29 +1779,8 @@ async function run(inputConfig = {}) {
     } else {
       links.forEach(l => log.detail(`Found link → [${l.id}] : "${l.text}" → ${l.href}`, 2));
     }
-
-    // specifically detect Teaching & Learning link
-    const teachLink = links.find(l =>
-      l.text.toLowerCase().includes('teaching') ||
-      l.id.toLowerCase().includes('teaching')
-    );
-
-    if (teachLink) {
-      log.success(`Teaching & Learning link detected: ${teachLink.text}`, 2);
-
-      // click it once to ensure session unlock
-      await page.click(`#${teachLink.id}`);
-      await delay(1500);
-
-      log.success("Teaching & Learning page opened via link click ✓", 2);
-      // go back to feedback page to continue sequence
-      await page.goto(URLS.production.feedbackOptions, { waitUntil: 'domcontentloaded' });
-      await delay(800);
-    } else {
-      log.warning("Teaching & Learning link not found in current DOM", 2);
-    }
   } catch (err) {
-    log.error(`Teaching link detection error: ${err.message}`, 2);
+    log.error(`Feedback link scan error: ${err.message}`, 2);
   }
 
   // ============= THEORY FEEDBACK =============
@@ -1793,8 +1795,9 @@ async function run(inputConfig = {}) {
 
       log.subsection("📝", `Theory ${index}/${Object.keys(theoryMap).length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
+      broadcast({ type: 'status_update', msg: `Theory ${index}/${Object.keys(theoryMap).length}: ${subjectCode} — ${teacherName || 'N/A'}` });
 
-      const result = await submitTheoryFeedback(page, subjectCode, teacherName, FEEDBACK_OPTION);
+      const result = await submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption);
 
       if (result === true) {
         stats.totalSubmissions++;
@@ -1823,8 +1826,9 @@ async function run(inputConfig = {}) {
 
       log.subsection("📝", `Lab ${index}/${Object.keys(labMap).length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
+      broadcast({ type: 'status_update', msg: `Lab ${index}/${Object.keys(labMap).length}: ${subjectCode} — ${teacherName || 'N/A'}` });
 
-      const result = await submitLabFeedback(page, subjectCode, teacherName, FEEDBACK_OPTION);
+      const result = await submitLabFeedback(page, subjectCode, teacherName, feedbackOption);
 
       if (result === true) {
         stats.totalSubmissions++;
@@ -1843,11 +1847,12 @@ async function run(inputConfig = {}) {
 
   // ============= MENTOR FEEDBACK =============
   broadcast({ type: 'status_update', msg: 'PHASE: Mentor Feedback' });
-  if (MENTOR_DEPT || MENTOR_NAME) {
+  if (mentorDept || mentorName) {
     log.section("👨‍🏫 MENTOR FEEDBACK SUBMISSION");
-    log.info(`Dept: ${MENTOR_DEPT || 'NOT PROVIDED'}, Name: ${MENTOR_NAME || 'NOT PROVIDED'}`);
+    log.info(`Dept: ${mentorDept || 'NOT PROVIDED'}, Name: ${mentorName || 'NOT PROVIDED'}`);
+    broadcast({ type: 'status_update', msg: `Mentor: ${mentorName || 'N/A'} (${mentorDept || 'N/A'})` });
 
-    const result = await submitMentorFeedback(page, MENTOR_DEPT, MENTOR_NAME, FEEDBACK_OPTION);
+    const result = await submitMentorFeedback(page, mentorDept, mentorName, feedbackOption);
 
     if (result === true) {
       stats.totalSubmissions++;
@@ -1864,6 +1869,7 @@ async function run(inputConfig = {}) {
   }
 
   // ============= TEACHING FEEDBACK =============
+  broadcast({ type: 'status_update', msg: 'PHASE: Teaching & Learning Feedback' });
   if (Object.keys(teachingMap).length > 0) {
     log.section("📖 TEACHING & LEARNING FEEDBACK");
     log.info(`${Object.keys(teachingMap).length} teaching subject(s) to process\n`);
@@ -1874,8 +1880,9 @@ async function run(inputConfig = {}) {
 
       log.subsection("📝", `Teaching ${index}/${Object.keys(teachingMap).length}: ${subjectCode}`);
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
+      broadcast({ type: 'status_update', msg: `Teaching ${index}/${Object.keys(teachingMap).length}: ${subjectCode} — ${teacherName || 'N/A'}` });
 
-      const result = await submitTeachingFeedback(page, subjectCode, teacherName, FEEDBACK_OPTION);
+      const result = await submitTeachingFeedback(page, subjectCode, teacherName, feedbackOption);
 
       if (result === true) {
         stats.totalSubmissions++;
@@ -1928,7 +1935,7 @@ async function run(inputConfig = {}) {
   BREAKDOWN BY CATEGORY:
   • Theory Subjects:          ${Object.keys(theoryMap).length} configured
   • Lab Subjects:             ${Object.keys(labMap).length} configured
-  • Mentor Feedback:          ${MENTOR_DEPT && MENTOR_NAME ? '1' : '0'} configured
+  • Mentor Feedback:          ${mentorDept && mentorName ? '1' : '0'} configured
   • Teaching & Learning:      ${Object.keys(teachingMap).length} configured
   ${"-".repeat(70)}
   `);
@@ -1984,6 +1991,9 @@ async function run(inputConfig = {}) {
 
   // Wait before closing
   await delay(5000);
+
+  // Remove the tab-tracking listener before closing browser
+  browser.off('targetcreated', onTargetCreated);
 
   // Close browser in production mode
   if (!IS_LOCAL) {
