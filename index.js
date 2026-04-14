@@ -23,6 +23,25 @@ let sseClients = [];
 let activePage = null; // Store handle for remote interaction
 let activeBrowser = null;
 let isPaused = false; // Global pause flag
+let activeRun = null;
+
+async function cleanupActiveSession(reason = null) {
+  if (reason) {
+    log.info(reason);
+  }
+  try {
+    if (activeBrowser?.isConnected()) {
+      await activeBrowser.close();
+    }
+  } catch (_) { }
+
+  activePage = null;
+  activeBrowser = null;
+  isPaused = false;
+  resumeResolve = null;
+  stats.startTime = null;
+  activeRun = null;
+}
 
 function broadcast(data) {
   const payload = JSON.stringify(data);
@@ -126,18 +145,9 @@ async function getUserConfirmation() {
  */
 // Global Resolver for production manual steps
 let resumeResolve = null;
-app.post("/api/resume", (req, res) => {
-  if (resumeResolve) {
-    log.success("User signaled protocol resumption ✓");
-    resumeResolve(req.body.captcha || null);
-    resumeResolve = null;
-    res.send({ status: "success", message: "Resuming..." });
-  } else {
-    res.status(400).send({ status: "error", message: "No pending action required" });
-  }
-});
 
 async function waitForEnter(message, page = null) {
+  throwIfRunAborted();
   if (!IS_LOCAL) {
     log.section("🧩 REMOTE ACTION REQUIRED");
     log.info(message);
@@ -147,6 +157,7 @@ async function waitForEnter(message, page = null) {
     const captchaText = await new Promise(resolve => {
       resumeResolve = resolve;
     });
+    throwIfRunAborted();
 
     if (captchaText && page) {
       log.action("Typing remote captcha solution...");
@@ -372,9 +383,22 @@ logMethods.forEach(method => {
 });
 
 // ============= UTILITY FUNCTIONS =============
+function isRunAborted() {
+  return !!activeRun?.abortController?.signal?.aborted;
+}
+
+function throwIfRunAborted() {
+  if (isRunAborted()) {
+    const err = new Error(activeRun?.terminatedByUser ? "Process terminated by user" : "Run aborted");
+    err.name = "AbortError";
+    throw err;
+  }
+}
+
 async function delay(ms) {
   const start = Date.now();
   while (Date.now() - start < ms) {
+    throwIfRunAborted();
     if (isPaused) {
       await new Promise(resolve => setTimeout(resolve, 500));
       continue;
@@ -427,6 +451,7 @@ async function handleMultiPageNavigation(page, startUrl) {
 }
 
 async function navigateToURL(page, url, pageName) {
+  throwIfRunAborted();
   if (IS_LOCAL) {
     // Local mode - use JavaScript navigation
     log.action(`Navigating to ${pageName} (local mode)...`);
@@ -493,6 +518,7 @@ async function waitForNetworkIdle(page, timeout = 3000) {
 }
 
 async function scrollToElement(page, selector, smooth = true) {
+  throwIfRunAborted();
   try {
     const exists = await page.$(selector);
     if (!exists) {
@@ -541,6 +567,7 @@ async function smoothScrollToView(page, selector) {
 }
 
 async function ensurePageVisible(page) {
+  throwIfRunAborted();
   await page.evaluate(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   });
@@ -605,6 +632,7 @@ function markFeedbackSubmitted(category, subject, teacher) {
 
 // ============= PAGE INTERACTION FUNCTIONS =============
 async function fillAllQuestions(page, preferredOption) {
+  throwIfRunAborted();
   log.action("Filling feedback questions...");
   await delay(300);
 
@@ -733,11 +761,16 @@ async function handleNetworkErrors(page) {
   });
 
   page.on('pageerror', error => {
+    if (error.message && error.message.includes('$(...).modal is not a function')) {
+      log.detail(`Page warning ignored: ${error.message}`, 2);
+      return;
+    }
     log.error(`Page error: ${error.message}`, 2);
   });
 }
 
 async function waitForSubmissionConfirmation(page, timeout = 5000) {
+  throwIfRunAborted();
   log.action("Waiting for server response...", 2);
 
   try {
@@ -760,10 +793,6 @@ async function waitForSubmissionConfirmation(page, timeout = 5000) {
         log.success("✅ ✅ SERVER CONFIRMED: Data submitted successfully!", 2);
         await dialog.accept().catch(() => { });
         dialogResult = 'success';
-      } else if (msgLower.includes('error') || msgLower.includes('failed')) {
-        log.error(`❌ Submission failed: ${msg}`, 2);
-        await dialog.accept().catch(() => { });
-        dialogResult = 'error';
       } else {
         log.warning(`⚠️ Unexpected response: ${msg}`, 2);
         await dialog.accept().catch(() => { });
@@ -970,12 +999,14 @@ async function findTeacherOption(page, selectId, teacherName) {
 }
 
 async function navigateToPage(page, pageName) {
+  throwIfRunAborted();
   const url = IS_LOCAL ? null : URLS.production[pageName];
   await navigateToURL(page, url, pageName);
 }
 
 // ============= SUBMIT FORM FUNCTION =============
 async function submitForm(page, selector) {
+  throwIfRunAborted();
   try {
     log.action("Preparing to submit form...", 2);
 
@@ -1078,6 +1109,7 @@ async function submitForm(page, selector) {
 
 // ============= FIXED THEORY FEEDBACK - STOPS IMMEDIATELY ON DUPLICATE =============
 async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption) {
+  throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher name provided`);
     stats.totalSkipped++;
@@ -1205,6 +1237,7 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
 
 // ============= FIXED LAB FEEDBACK =============
 async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption) {
+  throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
     stats.totalSkipped++;
@@ -1316,6 +1349,7 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
 
 // ============= FIXED MENTOR FEEDBACK =============
 async function submitMentorFeedback(page, dept, name, feedbackOption) {
+  throwIfRunAborted();
   if (!dept || !name) {
     log.skip('Skipping Mentor - Missing data');
     stats.totalSkipped++;
@@ -1441,6 +1475,7 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
 
 // ============= FIXED TEACHING FEEDBACK =============
 async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOption) {
+  throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
     stats.totalSkipped++;
@@ -1552,6 +1587,12 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
 
 // ============= MAIN EXECUTION =============
 async function run(inputConfig = {}) {
+  const abortController = new AbortController();
+  activeRun = {
+    abortController,
+    terminatedByUser: false
+  };
+
   const config = parseConfiguration(inputConfig);
   const { 
     enrollmentNo, password, feedbackOption, mentorDept, mentorName, 
@@ -1589,7 +1630,7 @@ async function run(inputConfig = {}) {
       '--no-sandbox',
       '--disable-setuid-sandbox'
     ],
-    defaultViewport: IS_LOCAL ? null : { width: 1280, height: 800 }
+    defaultViewport: IS_LOCAL ? null : { width: 1366, height: 860 }
   });
 
   const page = await browser.newPage();
@@ -1615,16 +1656,25 @@ async function run(inputConfig = {}) {
   activeBrowser = browser;
   handleNetworkErrors(page);
 
+  const bindActivePage = (nextPage, reason) => {
+    if (!nextPage || nextPage.isClosed()) return;
+    activePage = nextPage;
+    handleNetworkErrors(nextPage);
+    if (reason) {
+      log.info(`[TAB SWITCH] ${reason}`);
+      broadcast({ type: 'status_update', msg: `TAB_SWITCH: ${reason}` });
+    }
+  };
+
   // Track new tabs/windows — always update activePage so screenshot loop follows automation
   const onTargetCreated = async (target) => {
     if (target.type() === 'page') {
       try {
         const newPage = await target.page();
         if (newPage) {
-          activePage = newPage;
-          handleNetworkErrors(newPage);
-          log.info(`[TAB SWITCH] New tab/window opened — switching live view to new context.`);
-          broadcast({ type: 'status_update', msg: 'TAB_SWITCH: New window focused' });
+          bindActivePage(newPage, 'New window focused');
+          newPage.on('popup', popup => bindActivePage(popup, 'Popup focused'));
+          newPage.on('framenavigated', () => bindActivePage(newPage));
         }
       } catch (e) {
         // ignore if target already closed
@@ -1632,15 +1682,20 @@ async function run(inputConfig = {}) {
     }
   };
   browser.on('targetcreated', onTargetCreated);
+  browser.on('targetchanged', onTargetCreated);
+  page.on('popup', popup => bindActivePage(popup, 'Popup focused'));
+  page.on('framenavigated', () => bindActivePage(page));
 
   log.success("Browser launched successfully");
 
   // Screenshot broadcasting loop — near-real-time cadence for smooth live manual interaction
   let isCapturingFrame = false;
-  const frameIntervalMs = IS_LOCAL ? 700 : 100;
+  const frameIntervalMs = IS_LOCAL ? 400 : 60;
   const screenshotInterval = setInterval(async () => {
     if (isCapturingFrame) return;
     try {
+      if (!sseClients.length) return;
+      throwIfRunAborted();
       // Always capture from the currently active page so viewer tracks automation
       const capturePage = activePage || page;
       if (browser.isConnected() && capturePage && !capturePage.isClosed()) {
@@ -1648,13 +1703,16 @@ async function run(inputConfig = {}) {
         const screenshot = await capturePage.screenshot({ 
           encoding: 'base64',
           type: 'jpeg',
-          quality: IS_LOCAL ? 50 : 70
+          quality: IS_LOCAL ? 65 : 82
         });
         broadcast({ type: 'screenshot', data: `data:image/jpeg;base64,${screenshot}` });
       } else if (!browser.isConnected()) {
         clearInterval(screenshotInterval);
       }
     } catch (e) {
+      if (e?.name === 'AbortError') {
+        clearInterval(screenshotInterval);
+      }
       // Ignore transient screenshot errors (page navigating); do not clear interval
     } finally {
       isCapturingFrame = false;
@@ -1685,8 +1743,8 @@ async function run(inputConfig = {}) {
 
   log.success("IUSMS opened successfully.");
   log.section("🧩 MANUAL LOGIN REQUIRED");
-  log.warning("Manual Login Required.");
-  log.info("Please solve captcha, login, then click Continue Protocol.");
+  log.info("Please login manually.");
+  log.info("Click Continue Protocol after login.");
 
   log.action("Entering credentials...");
 
@@ -1778,6 +1836,22 @@ async function run(inputConfig = {}) {
       log.warning("No feedback links detected on page.", 2);
     } else {
       links.forEach(l => log.detail(`Found link → [${l.id}] : "${l.text}" → ${l.href}`, 2));
+      const ordered = [
+        { key: 'theory', tokens: ['theory', 'iqac', 'lnktheory'] },
+        { key: 'lab', tokens: ['lab', 'lnklab'] },
+        { key: 'mentor', tokens: ['mentor', 'lnkmentor'] },
+        { key: 'teaching', tokens: ['teaching', 'learning', 'lnkteach'] }
+      ];
+      ordered.forEach(({ key, tokens }) => {
+        const match = links.find(link => {
+          const blob = `${link.id} ${link.text} ${link.href}`.toLowerCase();
+          return tokens.some(token => blob.includes(token));
+        });
+        if (match?.href) {
+          URLS.production[key] = match.href;
+        }
+      });
+      log.detail(`Category execution order locked: Theory → Lab → Mentor → Teaching & Learning`, 2);
     }
   } catch (err) {
     log.error(`Feedback link scan error: ${err.message}`, 2);
@@ -1791,6 +1865,7 @@ async function run(inputConfig = {}) {
 
     let index = 0;
     for (const [subjectCode, teacherName] of Object.entries(theoryMap)) {
+      throwIfRunAborted();
       index++;
 
       log.subsection("📝", `Theory ${index}/${Object.keys(theoryMap).length}: ${subjectCode}`);
@@ -1822,6 +1897,7 @@ async function run(inputConfig = {}) {
 
     let index = 0;
     for (const [subjectCode, teacherName] of Object.entries(labMap)) {
+      throwIfRunAborted();
       index++;
 
       log.subsection("📝", `Lab ${index}/${Object.keys(labMap).length}: ${subjectCode}`);
@@ -1876,6 +1952,7 @@ async function run(inputConfig = {}) {
 
     let index = 0;
     for (const [subjectCode, teacherName] of Object.entries(teachingMap)) {
+      throwIfRunAborted();
       index++;
 
       log.subsection("📝", `Teaching ${index}/${Object.keys(teachingMap).length}: ${subjectCode}`);
@@ -1994,6 +2071,7 @@ async function run(inputConfig = {}) {
 
   // Remove the tab-tracking listener before closing browser
   browser.off('targetcreated', onTargetCreated);
+  browser.off('targetchanged', onTargetCreated);
 
   // Close browser in production mode
   if (!IS_LOCAL) {
@@ -2003,6 +2081,8 @@ async function run(inputConfig = {}) {
   } else {
     log.info("🔴 Close the browser manually when done (LOCAL MODE)\n");
   }
+
+  activeRun = null;
 }
 
 // ============= WEB SERVER ENDPOINTS =============
@@ -2020,7 +2100,7 @@ app.post("/api/resume", (req, res) => {
 app.post("/api/interact", async (req, res) => {
   const { action, x, y, key, text } = req.body;
   
-  if (!activePage) {
+  if (!activePage || isRunAborted()) {
     return res.status(400).send({ status: "error", message: "No active browser session" });
   }
 
@@ -2045,29 +2125,40 @@ app.post("/api/interact", async (req, res) => {
 });
 
 app.post("/api/pause", (req, res) => {
-  isPaused = !isPaused;
-  log.info(`Protocol ${isPaused ? 'PAUSED' : 'RESUMED'} by user command`);
-  broadcast({ type: 'status_update', msg: isPaused ? 'PROTOCOL_PAUSED' : 'PROTOCOL_RESUMED' });
+  if (!stats.startTime) {
+    return res.status(400).send({ status: "error", message: "No active run" });
+  }
+  isPaused = true;
+  log.info("Protocol PAUSED by user command");
+  broadcast({ type: 'status_update', msg: 'PROTOCOL_PAUSED' });
+  res.send({ status: "success", isPaused });
+});
+
+app.post("/api/resume-protocol", (req, res) => {
+  if (!stats.startTime) {
+    return res.status(400).send({ status: "error", message: "No active run" });
+  }
+  isPaused = false;
+  log.info("Protocol RESUMED by user command");
+  broadcast({ type: 'status_update', msg: 'PROTOCOL_RESUMED' });
   res.send({ status: "success", isPaused });
 });
 
 app.post("/api/kill", async (req, res) => {
   log.section("🛑 EMERGENCY KILL COMMAND RECEIVED");
   broadcast({ type: 'status_update', msg: 'TERMINATING_ALL_PROCESSES' });
-  broadcast({ type: 'log', level: 'error', msg: '⚠️ EMERGENCY KILL: All operations halted by user.' });
+  broadcast({ type: 'log', level: 'error', msg: 'Process terminated by user' });
 
-  try {
-    if (activeBrowser) {
-      await activeBrowser.close();
-    }
-  } catch (e) { }
-
-  activePage = null;
-  activeBrowser = null;
+  if (activeRun?.abortController && !activeRun.abortController.signal.aborted) {
+    activeRun.terminatedByUser = true;
+    activeRun.abortController.abort();
+  }
+  if (resumeResolve) {
+    resumeResolve(null);
+    resumeResolve = null;
+  }
   isPaused = false;
-  stats.startTime = null; 
-  
-  res.send({ status: "success", message: "Process terminated." });
+  res.send({ status: "success", message: "Process terminated by user." });
 });
 
 app.get("/api/stream", (req, res) => {
@@ -2098,8 +2189,15 @@ app.post("/api/execute", async (req, res) => {
 
     // Run the bot in the background with frontend inputs
     run(req.body).catch(err => {
+      if (err?.name === 'AbortError') {
+        log.warning("Process terminated by user");
+        broadcast({ type: 'status_update', msg: 'PROCESS_TERMINATED' });
+        return;
+      }
       log.error(`API Runtime error: ${err.message}`);
       broadcast({ type: 'log', level: 'error', msg: `Fatal Backend Error: ${err.message}` });
+    }).finally(async () => {
+      await cleanupActiveSession();
     });
 
   res.send({ 
