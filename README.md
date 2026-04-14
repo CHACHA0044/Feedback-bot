@@ -1,10 +1,9 @@
 ---
 title: Feedback Bot
 emoji: 🤖
-colorFrom: gold
+colorFrom: yellow
 colorTo: black
 sdk: docker
-app_port: 3000
 ---
 
 # Feedback-bot
