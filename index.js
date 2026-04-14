@@ -216,7 +216,8 @@ function parseConfiguration(config = {}) {
 
   const enrollmentNo = config.studentId || config.ENROLLMENT_NO || envEnrollment;
   const password = config.password || config.PASSWORD || envPassword;
-  const feedbackOption = config.feedbackOption || config.FEEDBACK_OPTION || envFeedback;
+  const feedbackOptionRaw = config.feedbackOption ?? config.FEEDBACK_OPTION ?? envFeedback;
+  const feedbackOption = typeof feedbackOptionRaw === 'string' ? feedbackOptionRaw.trim() : feedbackOptionRaw;
   const mentorDept = config.mentorDept || config.MENTOR_DEPT || envMentorDept;
   const mentorName = config.mentorName || config.MENTOR_NAME || envMentorName;
   
@@ -1615,14 +1616,18 @@ async function run(inputConfig = {}) {
   handleNetworkErrors(page);
   log.success("Browser launched successfully");
 
-  // Screenshot broadcasting loop - High frequency for production smoothness
+  // Screenshot broadcasting loop - tuned for smoother high-cadence live view
+  let isCapturingFrame = false;
+  const frameIntervalMs = IS_LOCAL ? 900 : 180;
   const screenshotInterval = setInterval(async () => {
+    if (isCapturingFrame) return;
     try {
       if (browser.isConnected() && !page.isClosed()) {
+        isCapturingFrame = true;
         const screenshot = await page.screenshot({ 
           encoding: 'base64',
           type: 'jpeg',
-          quality: IS_LOCAL ? 30 : 25 // Even lower quality for prod speed
+          quality: IS_LOCAL ? 40 : 45
         });
         broadcast({ type: 'screenshot', data: `data:image/jpeg;base64,${screenshot}` });
       } else {
@@ -1630,8 +1635,10 @@ async function run(inputConfig = {}) {
       }
     } catch (e) {
       clearInterval(screenshotInterval);
+    } finally {
+      isCapturingFrame = false;
     }
-  }, IS_LOCAL ? 1500 : 700); // 700ms for production smooth view
+  }, frameIntervalMs);
 
   // ============= LOGIN =============
   log.section("🔐 AUTHENTICATION");
