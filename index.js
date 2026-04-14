@@ -15,9 +15,119 @@ app.use(cors({
   methods: ['GET', 'POST'],
   credentials: true
 }));
-app.use(express.json());
-
 const PORT = process.env.PORT || 3000;
+
+app.get("/", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>FEEDBACK_BOT // UPLINK_ACTIVE</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        :root {
+          --primary: #f0c33c;
+          --primary-glow: rgba(240, 195, 60, 0.4);
+          --bg: #0a0a0a;
+        }
+
+        body {
+          margin: 0;
+          padding: 0;
+          background: var(--bg);
+          color: var(--primary);
+          font-family: 'JetBrains Mono', monospace;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          overflow: hidden;
+          text-transform: uppercase;
+        }
+
+        .container {
+          position: relative;
+          padding: 3rem;
+          border: 1px solid var(--primary);
+          box-shadow: 0 0 30px var(--primary-glow), inset 0 0 15px var(--primary-glow);
+          background: rgba(0, 0, 0, 0.8);
+          max-width: 90%;
+          text-align: center;
+        }
+
+        .container::before {
+          content: '';
+          position: absolute;
+          top: -2px; left: -2px; right: -2px; bottom: -2px;
+          background: linear-gradient(45deg, var(--primary), transparent, var(--primary));
+          z-index: -1;
+          opacity: 0.2;
+        }
+
+        h1 {
+          margin: 0;
+          font-size: 2.5rem;
+          letter-spacing: 0.5rem;
+          text-shadow: 2px 2px 0px #000, 0 0 10px var(--primary-glow);
+          animation: flicker 2s infinite;
+        }
+
+        .status {
+          margin-top: 1.5rem;
+          font-size: 1rem;
+          letter-spacing: 0.2rem;
+          color: #fff;
+          opacity: 0.8;
+        }
+
+        .status span {
+          color: #00ff00;
+          text-shadow: 0 0 5px #00ff00;
+        }
+
+        .scanline {
+          position: fixed;
+          top: 0; left: 0; width: 100%; height: 2px;
+          background: rgba(240, 195, 60, 0.05);
+          z-index: 10;
+          pointer-events: none;
+          animation: scan 4s linear infinite;
+        }
+
+        @keyframes flicker {
+          0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% { opacity: 1; }
+          20%, 21.999%, 63%, 63.999%, 65%, 69.999% { opacity: 0.4; }
+        }
+
+        @keyframes scan {
+          from { transform: translateY(-100%); }
+          to { transform: translateY(100vh); }
+        }
+
+        .version {
+          position: absolute;
+          bottom: 1rem;
+          right: 1.5rem;
+          font-size: 0.7rem;
+          opacity: 0.5;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="scanline"></div>
+      <div class="container">
+        <h1>UPLINK_ESTABLISHED</h1>
+        <div class="status">BACKEND_SYSTEM // <span>ONLINE_</span></div>
+        <p style="margin-top: 2rem; font-size: 0.8rem; color: #888;">READY FOR MISSION INITIATION. SECURE CONNECTION ACTIVE.</p>
+        <div class="version">V2.4.0_STABLE</div>
+      </div>
+    </body>
+    </html>
+  `);
+});
 
 // ============= SESSION MANAGEMENT SYSTEM =============
 const sessions = new Map();
