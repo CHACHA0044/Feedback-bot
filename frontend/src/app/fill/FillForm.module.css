@@ -195,9 +195,16 @@
 }
 
 .dashboardLayout {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .dashboardLayout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .browserSection {
@@ -232,6 +239,17 @@
   font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 1px;
+}
+
+.progressMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.68rem;
+  color: #7e8a8f;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
 }
 
 .logStream {
@@ -297,6 +315,35 @@
   box-shadow: 0 0 40px rgba(0,0,0,0.8);
 }
 
+.crtOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(0, 243, 255, 0.35), rgba(0, 0, 0, 0.95) 62%);
+}
+
+.crtPowerOn {
+  animation: crtPowerOn 0.9s ease forwards;
+}
+
+.crtPowerOff {
+  animation: crtPowerOff 0.8s ease forwards;
+}
+
+@keyframes crtPowerOn {
+  0% { transform: scaleX(0.04) scaleY(0.03); opacity: 0.95; }
+  45% { transform: scaleX(1.04) scaleY(0.08); opacity: 0.85; }
+  100% { transform: scaleX(1) scaleY(1); opacity: 0; }
+}
+
+@keyframes crtPowerOff {
+  0% { transform: scaleX(1) scaleY(1); opacity: 0; }
+  35% { transform: scaleX(1) scaleY(0.12); opacity: 0.85; }
+  75% { transform: scaleX(0.12) scaleY(0.03); opacity: 0.95; }
+  100% { transform: scaleX(0.01) scaleY(0.01); opacity: 0; }
+}
+
 /* Command Deck — horizontal sticky bar, outside and below browser viewport */
 .commandDeck {
   display: flex;
@@ -310,6 +357,13 @@
   backdrop-filter: blur(14px);
   box-shadow: 0 0 20px rgba(0, 243, 255, 0.08);
   flex-wrap: wrap;
+}
+
+.controlSection {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 100%;
 }
 
 .commandDeckTitle {
