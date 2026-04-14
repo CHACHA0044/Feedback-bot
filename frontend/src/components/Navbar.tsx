@@ -26,7 +26,7 @@ export default function Navbar() {
           href="/fill" 
           className={`${styles.link} ${pathname === '/fill' ? styles.active : ''}`}
         >
-          Operation
+          Operation Page
         </Link>
       </div>
       <div className={styles.status}>

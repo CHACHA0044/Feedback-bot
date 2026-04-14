@@ -682,7 +682,8 @@ export default function FillPage() {
                   onClick={() => setPresetModalOpen(true)}
                   title="Request Custom Preset"
                 >
-                  🖂
+                  <span className={styles.desktopMail}>🖂</span>
+                  <span className={styles.mobileMail}>📧</span>
                 </button>
               </div>
             </motion.div>
@@ -974,9 +975,6 @@ export default function FillPage() {
                 <div style={{ color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '2px' }}>
                   📡 MISSION_STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : currentStatus)}
                 </div>
-                <div style={{ color: '#555', fontSize: '0.65rem', alignSelf: 'center' }}>
-                  UPLINK_SECURE
-                </div>
               </div>
 
               <div className={styles.browserView}>
@@ -997,7 +995,7 @@ export default function FillPage() {
                 )}
               </div>
 
-              {runProgressState && runProgressState.phase !== 'Idle' && (
+              {runProgressState && runProgressState.phase !== 'Idle' && !isKilled && (
                 <div className={`${styles.progressWrapper} glass`}>
                   <div className={styles.progressInfo}>
                     <span>REMOTE UPLINK ESTABLISHED</span>
@@ -1015,25 +1013,6 @@ export default function FillPage() {
                     <span>{runProgressState.subject || 'No subject selected'}</span>
                   </div>
                 </div>
-              )}
-
-              {isCaptchaRequired && (
-                <motion.div
-                  className={styles.instructionBox}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                >
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    style={{ padding: '0.8rem 2.5rem', fontSize: '1.1rem', width: '100%', textShadow: '0 0 10px var(--primary-glow)' }}
-                    onClick={handleCaptchaSolved}
-                  >
-                    CONTINUE PROTOCOL
-                  </button>
-                  <p>press continue after logging in</p>
-                </motion.div>
               )}
             </div>
 
@@ -1060,6 +1039,15 @@ export default function FillPage() {
                 >
                   <div className={styles.commandDeckTitle}>⚙ COMMAND DECK</div>
                   <div className={styles.commandDeckRow}>
+                    {isCaptchaRequired && (
+                      <button
+                        onClick={handleCaptchaSolved}
+                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                        style={{ borderStyle: 'dashed', background: 'rgba(200, 163, 44, 0.15)' }}
+                      >
+                        ▶ CONTINUE PROTOCOL
+                      </button>
+                    )}
                     {isPaused ? (
                       <button
                         onClick={ensureResumed}

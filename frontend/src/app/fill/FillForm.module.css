@@ -320,7 +320,7 @@
 .logMsg.info { color: #666; }
 
 .browserView {
-  aspect-ratio: 16/10; /* Better rectangular shape for the enlarged view */
+  height: 528px; /* Matching the height of the logStream in Command Deck */
   background: #111;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -339,7 +339,7 @@
   pointer-events: none;
   background: 
     linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.4) 50%),
-    linear-gradient(90deg, rgba(255, 0, 0, 0.08), rgba(0, 255, 0, 0.05), rgba(0, 0, 255, 0.08));
+    linear-gradient(90deg, rgba(0, 243, 255, 0.05), rgba(4, 255, 0, 0.03), rgba(0, 243, 255, 0.05));
   background-size: 100% 3px, 3px 100%;
   box-shadow: inset 0 0 120px rgba(0,0,0,0.8);
   animation: crtFlicker 0.08s infinite alternate-reverse;
@@ -880,4 +880,10 @@
   0% { transform: scaleY(1); filter: brightness(1); }
   35% { transform: scaleY(0.01) scaleX(1.1); filter: brightness(2); }
   100% { transform: scaleY(0) scaleX(0); filter: brightness(5); }
+}
+
+.mobileMail { display: none; }
+@media (max-width: 600px) {
+  .desktopMail { display: none; }
+  .mobileMail { display: inline; }
 }
