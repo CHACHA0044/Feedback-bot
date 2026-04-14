@@ -9,11 +9,11 @@ const PRESETS = {
   "Sem 6, Yr 3, CCAI B": {
     theoryCodes: "CG302,CS305,CS313,CS315,CS348,CS394,EC339",
     theoryTeachers: "Dr. Sufia Rehman,Rahul Ranjan,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Akhlaque Ahmad Khan",
-    labCodes: "CS306,CS314,CS396",
-    labTeachers: "Falak Alam,Naziya Anjum,Mr. Sunil Singh",
+    labCodes: "CS306,CS306,CS314,CS396",
+    labTeachers: "Falak Alam,Mohammad Aman,Naziya Anjum,Mr. Sunil Singh",
     mentorDept: "Computer Science",
     mentorName: "Nida Khan",
-    teachingCodes: "CG302,CS305,CS303,CS306,CS313,CS315,CS348,CS394,CS396,EC339",
+    teachingCodes: "CG302,CS305,CS306,CS313,CS315,CS348,CS394,CS396,EC339",
     teachingTeachers: "Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan",
     feedbackOption: "Always"
   }
