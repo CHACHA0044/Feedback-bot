@@ -39,95 +39,34 @@ interface RunProgress {
 }
 
 export default function FillPage() {
-  const restoredRunState = (() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const saved = sessionStorage.getItem(RUN_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : null;
-    } catch (_) {
-      return null;
-    }
-  })();
-
-  const [step, setStep] = useState<'form' | 'executing' | 'done'>(restoredRunState?.step || 'form');
-  const [formData, setFormData] = useState(() => {
-    if (typeof window === 'undefined') {
-      return {
-        studentId: '',
-        password: '',
-        theoryCodes: '',
-        theoryTeachers: '',
-        labCodes: '',
-        labTeachers: '',
-        mentorDept: '',
-        mentorName: '',
-        teachingCodes: '',
-        teachingTeachers: '',
-        feedbackOption: 'Always'
-      };
-    }
-
-    try {
-      const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
-      if (saved) {
-        return {
-          studentId: '',
-          password: '',
-          theoryCodes: '',
-          theoryTeachers: '',
-          labCodes: '',
-          labTeachers: '',
-          mentorDept: '',
-          mentorName: '',
-          teachingCodes: '',
-          teachingTeachers: '',
-          feedbackOption: 'Always',
-          ...JSON.parse(saved)
-        };
-      }
-    } catch (_) { }
-
-    return {
-      studentId: '',
-      password: '',
-      theoryCodes: '',
-      theoryTeachers: '',
-      labCodes: '',
-      labTeachers: '',
-      mentorDept: '',
-      mentorName: '',
-      teachingCodes: '',
-      teachingTeachers: '',
-      feedbackOption: 'Always'
-    };
+  // Hydration-safe state initialization
+  const [step, setStep] = useState<'form' | 'executing' | 'done'>('form');
+  const [formData, setFormData] = useState({
+    studentId: '',
+    password: '',
+    theoryCodes: '',
+    theoryTeachers: '',
+    labCodes: '',
+    labTeachers: '',
+    mentorDept: '',
+    mentorName: '',
+    teachingCodes: '',
+    teachingTeachers: '',
+    feedbackOption: 'Always'
   });
 
-  const [logs, setLogs] = useState<LogEntry[]>(() => {
-    const baseLogs = restoredRunState?.logs || [];
-    if (restoredRunState?.step === 'executing' && !restoredRunState?.isKilled) {
-      return [
-        ...baseLogs,
-        {
-          id: `restore-${Date.now()}`,
-          time: new Date().toLocaleTimeString([], { hour12: false }),
-          msg: "Session state restored from storage.",
-          type: 'action'
-        }
-      ];
-    }
-    return baseLogs;
-  });
-  const [progress, setProgress] = useState(restoredRunState?.progress || 0);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [progress, setProgress] = useState(0);
   const [isCaptchaRequired, setIsCaptchaRequired] = useState(false);
   const [captchaSolution, setCaptchaSolution] = useState("");
   const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
-  const [currentStatus, setCurrentStatus] = useState<string>(restoredRunState?.currentStatus || "SYSTEM_IDLE");
-  const [isPaused, setIsPaused] = useState(!!restoredRunState?.isPaused);
-  const [isKilled, setIsKilled] = useState(!!restoredRunState?.isKilled);
+  const [currentStatus, setCurrentStatus] = useState<string>("SYSTEM_IDLE");
+  const [isPaused, setIsPaused] = useState(false);
+  const [isKilled, setIsKilled] = useState(false);
   const [killModalOpen, setKillModalOpen] = useState(false);
   const [isGlobalSyncPulse, setIsGlobalSyncPulse] = useState(false);
   const [crtState, setCrtState] = useState<'off' | 'on' | 'none'>('none');
-  const [runProgressState, setRunProgressState] = useState<RunProgress>(restoredRunState?.runProgressState || {
+  const [runProgressState, setRunProgressState] = useState<RunProgress>({
     phase: 'Idle',
     index: 0,
     total: 0,
@@ -138,6 +77,55 @@ export default function FillPage() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const [presetModalOpen, setPresetModalOpen] = useState(false);
+
+  // Initial restoration effect (fixes hydration)
+  useEffect(() => {
+    // Restore Form Data
+    try {
+      const savedConfig = localStorage.getItem(CONFIG_STORAGE_KEY);
+      if (savedConfig) {
+        setFormData(prev => ({ ...prev, ...JSON.parse(savedConfig) }));
+      }
+    } catch (_) {}
+
+    // Restore Run State
+    try {
+      const savedRun = sessionStorage.getItem(RUN_STORAGE_KEY);
+      if (savedRun) {
+        const restored = JSON.parse(savedRun);
+        setStep(restored.step || 'form');
+        setProgress(restored.progress || 0);
+        setIsPaused(!!restored.isPaused);
+        setIsKilled(!!restored.isKilled);
+        setCurrentStatus(restored.currentStatus || "SYSTEM_IDLE");
+        setRunProgressState(restored.runProgressState || {
+          phase: 'Idle',
+          index: 0,
+          total: 0,
+          subject: '',
+          teacher: '',
+          remaining: 0
+        });
+        
+        if (restored.logs) {
+          const baseLogs = restored.logs;
+          if (restored.step === 'executing' && !restored.isKilled) {
+            setLogs([
+              ...baseLogs,
+              {
+                id: `restore-${Date.now()}`,
+                time: new Date().toLocaleTimeString([], { hour12: false }),
+                msg: "Session state restored from storage.",
+                type: 'action'
+              }
+            ]);
+          } else {
+            setLogs(baseLogs);
+          }
+        }
+      }
+    } catch (_) {}
+  }, []);
   const [presetMessage, setPresetMessage] = useState('');
 
   const handleSendPresetRequest = () => {
@@ -602,7 +590,7 @@ export default function FillPage() {
   }
 
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container} ${step === 'executing' ? styles.wideContainer : ''}`}>
       <header className={styles.header}>
         <h1 className={styles.title} style={{ fontSize: '3.5rem' }}>Operation Config</h1>
         <p className={styles.subtitle}>Initialize bot parameters for automated execution.</p>
@@ -700,134 +688,10 @@ export default function FillPage() {
             </motion.div>
           </div>
 
-          {/* Section 2: Theory */}
+          {/* Section 2: Feedback Option */}
           <div className={`${styles.section} glass`}>
             <div className={styles.sectionTitle}>
-              <span>Section 02 - Theory Matrix</span>
-            </div>
-            <div className={styles.grid}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Subject Codes (comma-separated)</label>
-                <input
-                  type="text"
-                  name="theoryCodes"
-                  className={styles.input}
-                  placeholder="CG301,CS301,..."
-                  value={formData.theoryCodes}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Teacher Names (synced)</label>
-                <input
-                  type="text"
-                  name="theoryTeachers"
-                  className={styles.input}
-                  placeholder="Teacher 1, Teacher 2, ..."
-                  value={formData.theoryTeachers}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: Lab */}
-          <div className={`${styles.section} glass`}>
-            <div className={styles.sectionTitle}>
-              <span>Section 03 - Lab Modules</span>
-            </div>
-            <div className={styles.grid}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Lab Codes</label>
-                <input
-                  type="text"
-                  name="labCodes"
-                  className={styles.input}
-                  placeholder="CS310,CS302,..."
-                  value={formData.labCodes}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Lab Engineers</label>
-                <input
-                  type="text"
-                  name="labTeachers"
-                  className={styles.input}
-                  placeholder="Engineer 1, Engineer 2, ..."
-                  value={formData.labTeachers}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 4: Mentor */}
-          <div className={`${styles.section} glass`}>
-            <div className={styles.sectionTitle}>
-              <span>Section 04 - Mentor Directive</span>
-            </div>
-            <div className={styles.grid}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Department</label>
-                <input
-                  type="text"
-                  name="mentorDept"
-                  className={styles.input}
-                  placeholder="Computer Science"
-                  value={formData.mentorDept}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Mentor Name</label>
-                <input
-                  type="text"
-                  name="mentorName"
-                  className={styles.input}
-                  placeholder="Identity Prime"
-                  value={formData.mentorName}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 5: Teaching & Learning */}
-          <div className={`${styles.section} glass`}>
-            <div className={styles.sectionTitle}>
-              <span>Section 05 - Learning Protocols</span>
-            </div>
-            <div className={styles.grid}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Subject Codes</label>
-                <input
-                  type="text"
-                  name="teachingCodes"
-                  className={styles.input}
-                  placeholder="CS304,CS301,..."
-                  value={formData.teachingCodes}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Instructors</label>
-                <input
-                  type="text"
-                  name="teachingTeachers"
-                  className={styles.input}
-                  placeholder="Instructor 1, Instructor 2, ..."
-                  value={formData.teachingTeachers}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 6: Feedback Option */}
-          <div className={`${styles.section} glass`}>
-            <div className={styles.sectionTitle}>
-              <span>Section 06 - Sentiment Bias</span>
+              <span>Section 02 - Sentiment Bias</span>
             </div>
             <motion.div
               className={`${styles.inputGroup} ${styles.glassControl}`}
@@ -870,6 +734,130 @@ export default function FillPage() {
                 </AnimatePresence>
               </div>
             </motion.div>
+          </div>
+
+          {/* Section 3: Theory */}
+          <div className={`${styles.section} glass`}>
+            <div className={styles.sectionTitle}>
+              <span>Section 03 - Theory Matrix</span>
+            </div>
+            <div className={styles.grid}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Subject Codes (comma-separated)</label>
+                <input
+                  type="text"
+                  name="theoryCodes"
+                  className={styles.input}
+                  placeholder="CG301,CS301,..."
+                  value={formData.theoryCodes}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Teacher Names (synced)</label>
+                <input
+                  type="text"
+                  name="theoryTeachers"
+                  className={styles.input}
+                  placeholder="Teacher 1, Teacher 2, ..."
+                  value={formData.theoryTeachers}
+                  onChange={handleInputChange}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: Lab */}
+          <div className={`${styles.section} glass`}>
+            <div className={styles.sectionTitle}>
+              <span>Section 04 - Lab Modules</span>
+            </div>
+            <div className={styles.grid}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Lab Codes</label>
+                <input
+                  type="text"
+                  name="labCodes"
+                  className={styles.input}
+                  placeholder="CS310,CS302,..."
+                  value={formData.labCodes}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Lab Engineers</label>
+                <input
+                  type="text"
+                  name="labTeachers"
+                  className={styles.input}
+                  placeholder="Engineer 1, Engineer 2, ..."
+                  value={formData.labTeachers}
+                  onChange={handleInputChange}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 5: Mentor */}
+          <div className={`${styles.section} glass`}>
+            <div className={styles.sectionTitle}>
+              <span>Section 05 - Mentor Directive</span>
+            </div>
+            <div className={styles.grid}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Department</label>
+                <input
+                  type="text"
+                  name="mentorDept"
+                  className={styles.input}
+                  placeholder="Computer Science"
+                  value={formData.mentorDept}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Mentor Name</label>
+                <input
+                  type="text"
+                  name="mentorName"
+                  className={styles.input}
+                  placeholder="Identity Prime"
+                  value={formData.mentorName}
+                  onChange={handleInputChange}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 6: Teaching & Learning */}
+          <div className={`${styles.section} glass`}>
+            <div className={styles.sectionTitle}>
+              <span>Section 06 - Learning Protocols</span>
+            </div>
+            <div className={styles.grid}>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Subject Codes</label>
+                <input
+                  type="text"
+                  name="teachingCodes"
+                  className={styles.input}
+                  placeholder="CS304,CS301,..."
+                  value={formData.teachingCodes}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className={styles.inputGroup}>
+                <label className={styles.label}>Instructors</label>
+                <input
+                  type="text"
+                  name="teachingTeachers"
+                  className={styles.input}
+                  placeholder="Instructor 1, Instructor 2, ..."
+                  value={formData.teachingTeachers}
+                  onChange={handleInputChange}
+                />
+              </div>
+            </div>
           </div>
 
           <button type="submit" className="btn-primary" style={{ marginTop: '2rem', width: '100%', padding: '1.5rem', fontSize: '1.2rem' }}>
@@ -940,7 +928,7 @@ export default function FillPage() {
           </AnimatePresence>
         </form>
       ) : (
-        <div className={styles.executionPanel}>
+        <div className={`${styles.executionPanel} ${step === 'executing' ? styles.wideExecutionPanel : ''}`}>
           {/* ── In-app Terminate Confirmation Modal ── */}
           <AnimatePresence>
             {killModalOpen && (
@@ -998,7 +986,7 @@ export default function FillPage() {
                   <img
                     src={liveScreenshot}
                     alt="Remote View"
-                    className={`${styles.liveViewImage} ${isCaptchaRequired ? styles.zoomed : ''}`}
+                    className={`${styles.liveViewImage} ${isCaptchaRequired ? styles.zoomed : ''} ${crtState === 'on' ? styles.glitch : ''} ${crtState === 'off' ? styles.powerOff : ''}`}
                     onClick={handleImageClick}
                     style={{ cursor: 'crosshair' }}
                   />
@@ -1009,60 +997,44 @@ export default function FillPage() {
                 )}
               </div>
 
-              <div className={`${styles.progressWrapper} glass`}>
-                <div className={styles.progressInfo}>
-                  <span>REMOTE UPLINK ESTABLISHED</span>
-                  <span>{Math.round(progress)}%</span>
-                </div>
-                <div className={styles.progressBar}>
-                  <div
-                    className={styles.progressFill}
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
-                <div className={styles.progressMeta}>
-                  <span>{runProgressState.phase}</span>
-                  <span>{runProgressState.index > 0 ? `${runProgressState.index}/${runProgressState.total}` : 'Awaiting item'}</span>
-                  <span>{runProgressState.subject || 'No subject selected'}</span>
-                </div>
-              </div>
-
-              {isCaptchaRequired && (
-                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                  <button onClick={() => handleKeyPress('Tab')} style={{ background: '#222', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.7rem', border: '1px solid #444' }}>TAB</button>
-                  <button onClick={() => handleKeyPress('Enter')} style={{ background: '#222', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.7rem', border: '1px solid #444' }}>ENTER</button>
-                  <button onClick={() => handleKeyPress('Backspace')} style={{ background: '#222', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.7rem', border: '1px solid #444' }}>BSPACE</button>
+              {runProgressState && runProgressState.phase !== 'Idle' && (
+                <div className={`${styles.progressWrapper} glass`}>
+                  <div className={styles.progressInfo}>
+                    <span>REMOTE UPLINK ESTABLISHED</span>
+                    <span>{Math.round(progress)}%</span>
+                  </div>
+                  <div className={styles.progressBar}>
+                    <div
+                      className={styles.progressFill}
+                      style={{ width: `${progress}%` }}
+                    ></div>
+                  </div>
+                  <div className={styles.progressMeta}>
+                    <span>{runProgressState.phase}</span>
+                    <span>{runProgressState.index > 0 ? `${runProgressState.index}/${runProgressState.total}` : 'Awaiting item'}</span>
+                    <span>{runProgressState.subject || 'No subject selected'}</span>
+                  </div>
                 </div>
               )}
 
-              {/* Detached CAPTCHA / Manual Login Controls */}
-              <AnimatePresence>
-                {isCaptchaRequired && (
-                  <motion.div
-                    className={styles.instructionBox}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
+              {isCaptchaRequired && (
+                <motion.div
+                  className={styles.instructionBox}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                >
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ padding: '0.8rem 2.5rem', fontSize: '1.1rem', width: '100%', textShadow: '0 0 10px var(--primary-glow)' }}
+                    onClick={handleCaptchaSolved}
                   >
-                    <p style={{ color: '#ccc', fontSize: '0.9rem', textAlign: 'center', fontWeight: 'bold' }}>
-                      MISSION STATUS: ACTION REQUIRED
-                    </p>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', maxWidth: '300px', margin: '0.5rem 0', alignItems: 'center' }}>
-                      <button
-                        className="btn-primary"
-                        style={{ padding: '0.8rem 2rem', fontSize: '1rem', width: '100%', textShadow: '0 0 10px var(--primary-glow)' }}
-                        onClick={handleCaptchaSolved}
-                      >
-                        CONTINUE PROTOCOL
-                      </button>
-                      <span style={{ color: '#666', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '1.5px', textAlign: 'center' }}>
-                        Press once logged in and page is loaded
-                      </span>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    CONTINUE PROTOCOL
+                  </button>
+                  <p>press continue after logging in</p>
+                </motion.div>
+              )}
             </div>
 
             <div className={styles.controlSection}>
@@ -1112,21 +1084,21 @@ export default function FillPage() {
                   </div>
                 </motion.div>
               )}
-
-              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
-                <button
-                  className="btn-primary"
-                  style={{ padding: '0.8rem 2rem', opacity: 0.8 }}
-                  onClick={() => {
-                    closeStream();
-                    clearRunState('returned to config');
-                    setStep('form');
-                  }}
-                >
-                  RETURN TO CONFIG
-                </button>
-              </div>
             </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
+            <button
+              className="btn-primary"
+              style={{ padding: '0.8rem 3rem', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '2px' }}
+              onClick={() => {
+                closeStream();
+                clearRunState('returned to config');
+                setStep('form');
+              }}
+            >
+              RETURN TO CONFIG
+            </button>
           </div>
         </div>
       )}
