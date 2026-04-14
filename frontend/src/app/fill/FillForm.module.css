@@ -30,6 +30,25 @@
   gap: 2rem;
 }
 
+.globalSyncPulse {
+  animation: globalSyncPulse 0.9s ease-out;
+}
+
+@keyframes globalSyncPulse {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(0, 243, 255, 0));
+  }
+  35% {
+    transform: scale(1.005);
+    filter: drop-shadow(0 0 20px rgba(0, 243, 255, 0.35));
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(0, 243, 255, 0));
+  }
+}
+
 .section {
   padding: 2.5rem;
   position: relative;
@@ -90,6 +109,14 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.glassControl {
+  backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--primary);
+  border-radius: 10px;
+  padding: 1rem;
 }
 
 .label {
@@ -246,6 +273,62 @@
   position: relative;
   overflow: hidden;
   box-shadow: 0 0 40px rgba(0,0,0,0.8);
+}
+
+.commandDeck {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 180px;
+  padding: 0.8rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid var(--primary);
+  backdrop-filter: blur(12px);
+}
+
+.commandDeckTitle {
+  font-size: 0.6rem;
+  letter-spacing: 1.6px;
+  color: var(--primary);
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.commandDeckButton {
+  border: 1px solid var(--border);
+  background: #161616;
+  color: #d5d5d5;
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-align: left;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.commandDeckButton:hover {
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.commandDeckButtonActive {
+  color: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 15px var(--primary-glow);
+}
+
+.commandDeckKill {
+  border-color: #c52222;
+  color: #ff5f5f;
+  background: rgba(64, 0, 0, 0.7);
 }
 
 .liveViewImage {
