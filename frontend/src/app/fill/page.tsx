@@ -26,58 +26,189 @@ type LogEntry = {
   type: 'info' | 'success' | 'error' | 'action';
 };
 
+const CONFIG_STORAGE_KEY = 'feedback_bot_config';
+const RUN_STORAGE_KEY = 'feedback_bot_active_run';
+
 export default function FillPage() {
-  const [step, setStep] = useState<'form' | 'executing' | 'done'>('form');
-  const [formData, setFormData] = useState({
-    studentId: '',
-    password: '',
-    theoryCodes: '',
-    theoryTeachers: '',
-    labCodes: '',
-    labTeachers: '',
-    mentorDept: '',
-    mentorName: '',
-    teachingCodes: '',
-    teachingTeachers: '',
-    feedbackOption: 'Always'
+  const restoredRunState = (() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = sessionStorage.getItem(RUN_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch (_) {
+      return null;
+    }
+  })();
+
+  const [step, setStep] = useState<'form' | 'executing' | 'done'>(restoredRunState?.step || 'form');
+  const [formData, setFormData] = useState(() => {
+    if (typeof window === 'undefined') {
+      return {
+        studentId: '',
+        password: '',
+        theoryCodes: '',
+        theoryTeachers: '',
+        labCodes: '',
+        labTeachers: '',
+        mentorDept: '',
+        mentorName: '',
+        teachingCodes: '',
+        teachingTeachers: '',
+        feedbackOption: 'Always'
+      };
+    }
+
+    try {
+      const saved = localStorage.getItem(CONFIG_STORAGE_KEY);
+      if (saved) {
+        return {
+          studentId: '',
+          password: '',
+          theoryCodes: '',
+          theoryTeachers: '',
+          labCodes: '',
+          labTeachers: '',
+          mentorDept: '',
+          mentorName: '',
+          teachingCodes: '',
+          teachingTeachers: '',
+          feedbackOption: 'Always',
+          ...JSON.parse(saved)
+        };
+      }
+    } catch (_) { }
+
+    return {
+      studentId: '',
+      password: '',
+      theoryCodes: '',
+      theoryTeachers: '',
+      labCodes: '',
+      labTeachers: '',
+      mentorDept: '',
+      mentorName: '',
+      teachingCodes: '',
+      teachingTeachers: '',
+      feedbackOption: 'Always'
+    };
   });
 
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [progress, setProgress] = useState(0);
+  const [logs, setLogs] = useState<LogEntry[]>(() => {
+    const baseLogs = restoredRunState?.logs || [];
+    if (restoredRunState?.step === 'executing' && !restoredRunState?.isKilled) {
+      return [
+        ...baseLogs,
+        {
+          id: `restore-${Date.now()}`,
+          time: new Date().toLocaleTimeString([], { hour12: false }),
+          msg: "Session state restored from storage.",
+          type: 'action'
+        }
+      ];
+    }
+    return baseLogs;
+  });
+  const [progress, setProgress] = useState(restoredRunState?.progress || 0);
   const [isCaptchaRequired, setIsCaptchaRequired] = useState(false);
   const [captchaSolution, setCaptchaSolution] = useState("");
   const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
-  const [currentStatus, setCurrentStatus] = useState<string>("SYSTEM_IDLE");
-  const [isPaused, setIsPaused] = useState(false);
-  const [isKilled, setIsKilled] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState<string>(restoredRunState?.currentStatus || "SYSTEM_IDLE");
+  const [isPaused, setIsPaused] = useState(!!restoredRunState?.isPaused);
+  const [isKilled, setIsKilled] = useState(!!restoredRunState?.isKilled);
   const [killModalOpen, setKillModalOpen] = useState(false);
   const [isGlobalSyncPulse, setIsGlobalSyncPulse] = useState(false);
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const [crtState, setCrtState] = useState<'off' | 'on' | 'none'>('none');
+  const [runProgressState, setRunProgressState] = useState(restoredRunState?.runProgressState || {
+    phase: 'Idle',
+    index: 0,
+    total: 0,
+    subject: '',
+    teacher: '',
+    remaining: 0
+  });
+  const logContainerRef = useRef<HTMLDivElement>(null);
+  const shouldAutoFollowRef = useRef(true);
   const interactionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const latestScreenshotRef = useRef<string | null>(null);
   const frameRequestRef = useRef<number | null>(null);
+  const streamRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectStreamRef = useRef<() => void>(() => undefined);
 
-  // Persistence logic
-  useEffect(() => {
-    const saved = localStorage.getItem('feedback_bot_config');
-    if (saved) {
-      try {
-        setFormData(prev => ({ ...prev, ...JSON.parse(saved) }));
-      } catch (e) {
-        console.error("Failed to load saved config");
-      }
-    }
+  const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
+    const newLog: LogEntry = {
+      id: Math.random().toString(36).substr(2, 9),
+      time: new Date().toLocaleTimeString([], { hour12: false }),
+      msg,
+      type
+    };
+    setLogs(prev => [...prev, newLog]);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('feedback_bot_config', JSON.stringify(formData));
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(formData));
   }, [formData]);
 
   useEffect(() => {
-    if (logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    if (!logContainerRef.current || !shouldAutoFollowRef.current) return;
+    logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
   }, [logs]);
+
+  const persistRunState = useCallback((reason: string) => {
+    const payload = {
+      step,
+      progress,
+      isPaused,
+      isKilled,
+      currentStatus,
+      runProgressState,
+      formData,
+      logs: logs.slice(-100)
+    };
+    sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(payload));
+    addLog(`Session state saved (${reason}).`, "info");
+  }, [step, progress, isPaused, isKilled, currentStatus, runProgressState, formData, logs, addLog]);
+
+  const clearRunState = useCallback((reason: string) => {
+    sessionStorage.removeItem(RUN_STORAGE_KEY);
+    addLog(`Session state cleared (${reason}).`, "info");
+  }, [addLog]);
+
+  const deriveProgress = useCallback((status: string) => {
+    const phaseMatch = status.match(/^PHASE:\s*(.+)$/i);
+    if (phaseMatch) {
+      setRunProgressState(prev => ({ ...prev, phase: phaseMatch[1], index: 0, total: 0, remaining: 0 }));
+      return;
+    }
+
+    const itemMatch = status.match(/^(Theory|Lab|Teaching)\s+(\d+)\/(\d+):\s*([^—]+)—\s*(.+)$/i);
+    if (itemMatch) {
+      const [, phase, idx, total, subject, teacher] = itemMatch;
+      const currentIndex = Number(idx);
+      const totalCount = Number(total);
+      setRunProgressState({
+        phase,
+        index: currentIndex,
+        total: totalCount,
+        subject: subject.trim(),
+        teacher: teacher.trim(),
+        remaining: Math.max(totalCount - currentIndex, 0)
+      });
+      return;
+    }
+
+    const mentorMatch = status.match(/^Mentor:\s*(.+)\s+\((.+)\)$/i);
+    if (mentorMatch) {
+      setRunProgressState({
+        phase: 'Mentor',
+        index: 1,
+        total: 1,
+        subject: mentorMatch[2],
+        teacher: mentorMatch[1],
+        remaining: 0
+      });
+    }
+  }, []);
 
   useEffect(() => {
     // Intersection Observer for section scroll-in animations
@@ -116,48 +247,33 @@ export default function FillPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const addLog = (msg: string, type: LogEntry['type'] = 'info') => {
-    const newLog: LogEntry = {
-      id: Math.random().toString(36).substr(2, 9),
-      time: new Date().toLocaleTimeString([], { hour12: false }),
-      msg,
-      type
-    };
-    setLogs(prev => [...prev, newLog]);
-  };
-
   const queueInteraction = useCallback((task: () => Promise<void>) => {
     interactionQueueRef.current = interactionQueueRef.current
       .then(task)
       .catch(() => undefined);
   }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setStep('executing');
-    startExecution();
-  };
+  const closeStream = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.close();
+      streamRef.current = null;
+    }
+  }, []);
 
-  const startExecution = async () => {
-    addLog("System initialized. Establishing Uplink...", "action");
-    setProgress(5);
-
-    await delay(1000);
-    addLog("Connecting to Mission Control stream...", "action");
-
+  const connectStream = useCallback(() => {
+    closeStream();
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-
-    // Connect to the log/screenshot stream first
     const eventSource = new EventSource(`${backendUrl}/api/stream`);
+    streamRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'log') {
         addLog(data.msg, data.level);
-        if (data.msg.includes(" MISSION ACCOMPLISHED") || data.msg.includes("completed successfully")) {
-          setStep('done');
-          eventSource.close();
-        }
       } else if (data.type === 'screenshot') {
         latestScreenshotRef.current = data.data;
         if (frameRequestRef.current === null) {
@@ -170,15 +286,80 @@ export default function FillPage() {
         setIsCaptchaRequired(true);
       } else if (data.type === 'status_update') {
         setCurrentStatus(data.msg);
+        deriveProgress(data.msg);
         addLog(`UPLINK_STATUS: ${data.msg}`, "info");
+
+        if (data.msg === 'MISSION_ACCOMPLISHED') {
+          setCrtState('off');
+          clearRunState('completed');
+          closeStream();
+          setTimeout(() => setStep('done'), 900);
+        }
+        if (data.msg === 'PROCESS_TERMINATED' || data.msg === 'TERMINATING_ALL_PROCESSES') {
+          setIsKilled(true);
+          setIsPaused(false);
+          setCurrentStatus('PROCESS_TERMINATED');
+          setCrtState('off');
+          clearRunState('terminated');
+        }
       }
     };
 
     eventSource.onerror = () => {
       addLog("Stream connection lost. Retrying...", "error");
+      closeStream();
+      reconnectTimeoutRef.current = setTimeout(() => {
+        if (step === 'executing' && !isKilled) {
+          connectStreamRef.current();
+        }
+      }, 1500);
     };
+  }, [closeStream, addLog, deriveProgress, clearRunState, step, isKilled]);
+
+  useEffect(() => {
+    connectStreamRef.current = connectStream;
+  }, [connectStream]);
+
+  useEffect(() => {
+    if (step !== 'executing') return;
+    const payload = {
+      step,
+      progress,
+      isPaused,
+      isKilled,
+      currentStatus,
+      runProgressState,
+      formData,
+      logs: logs.slice(-100)
+    };
+    sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(payload));
+  }, [step, progress, isPaused, isKilled, currentStatus, runProgressState, formData, logs]);
+
+  useEffect(() => {
+    if (step === 'executing' && !isKilled) {
+      connectStream();
+    }
+  }, [step, isKilled, connectStream]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setStep('executing');
+    setIsKilled(false);
+    setCrtState('on');
+    setTimeout(() => setCrtState('none'), 900);
+    startExecution();
+  };
+
+  const startExecution = async () => {
+    addLog("System initialized. Establishing Uplink...", "action");
+    setProgress(5);
+
+    await delay(1000);
+    addLog("Connecting to Mission Control stream...", "action");
+    persistRunState('run started');
 
     setProgress(15);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const executionPayload = {
       ...formData,
       feedbackOption: formData.feedbackOption || 'Always'
@@ -201,12 +382,14 @@ export default function FillPage() {
       } else {
         addLog(`Uplink Failed: ${data.message}`, "error");
         addLog("Mission aborted. Use the button below to return to config.", "info");
-        eventSource.close();
+        clearRunState('execution failed');
+        closeStream();
       }
     } catch (err) {
       addLog(`Critical Connection Error: ${err instanceof Error ? err.message : 'Unknown Error'}`, "error");
       addLog("Network uplink severed. Check backend status.", "info");
-      eventSource.close();
+      clearRunState('connection error');
+      closeStream();
     }
   };
 
@@ -317,30 +500,33 @@ export default function FillPage() {
       if (frameRequestRef.current !== null) {
         cancelAnimationFrame(frameRequestRef.current);
       }
+      closeStream();
     };
-  }, []);
+  }, [closeStream]);
 
-  const handlePause = async () => {
+  const setProtocolPaused = async (paused: boolean) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     try {
-      const res = await fetch(`${backendUrl}/api/pause`, { method: 'POST' });
+      const endpoint = paused ? '/api/pause' : '/api/resume-protocol';
+      const res = await fetch(`${backendUrl}${endpoint}`, { method: 'POST' });
       const data = await res.json();
       setIsPaused(data.isPaused);
       addLog(`SYSTEM: Protocol ${data.isPaused ? 'Paused' : 'Resumed'}`, "action");
-    } catch (err) {
+      persistRunState(data.isPaused ? 'paused' : 'resumed');
+    } catch (_) {
       console.error("Pause failed");
     }
   };
 
   const ensurePaused = async () => {
     if (!isPaused) {
-      await handlePause();
+      await setProtocolPaused(true);
     }
   };
 
   const ensureResumed = async () => {
     if (isPaused) {
-      await handlePause();
+      await setProtocolPaused(false);
     }
   };
 
@@ -354,14 +540,25 @@ export default function FillPage() {
     try {
       await fetch(`${backendUrl}/api/kill`, { method: 'POST' });
       setIsKilled(true);
+      setIsPaused(false);
       setCurrentStatus("PROCESS_TERMINATED");
-      addLog("SYSTEM: EMERGENCY KILL TRIGGERED", "error");
-    } catch (err) {
+      setCrtState('off');
+      addLog("Process terminated by user", "error");
+      clearRunState('terminated');
+      closeStream();
+    } catch (_) {
       console.error("Kill failed");
     }
   };
 
   const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+  const handleLogScroll = () => {
+    if (!logContainerRef.current) return;
+    const node = logContainerRef.current;
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    shouldAutoFollowRef.current = distanceFromBottom < 32;
+  };
 
   if (step === 'done') {
     return (
@@ -630,23 +827,8 @@ export default function FillPage() {
             )}
           </AnimatePresence>
 
-          <div className={`${styles.progressWrapper} glass`}>
-            <div className={styles.progressInfo}>
-              <span>REMOTE UPLINK ESTABLISHED</span>
-              <span>{Math.round(progress)}%</span>
-            </div>
-            <div className={styles.progressBar}>
-              <div
-                className={styles.progressFill}
-                style={{ width: `${progress}%` }}
-              ></div>
-            </div>
-          </div>
-
           <div className={styles.dashboardLayout}>
-            {/* Upper Window: Browser View */}
             <div className={styles.browserSection}>
-              {/* Status Badge */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                 <div style={{ color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '2px' }}>
                   📡 MISSION_STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : currentStatus)}
@@ -658,6 +840,7 @@ export default function FillPage() {
 
               <div className={styles.browserView}>
                 <div className={styles.liveOverlay}>{isKilled ? 'CONNECTION_LOST' : 'LIVE_REMOTE_VIEW (INTERACTIVE)'}</div>
+                {crtState !== 'none' && <div className={`${styles.crtOverlay} ${crtState === 'on' ? styles.crtPowerOn : styles.crtPowerOff}`} />}
                 {(liveScreenshot && !isKilled) ? (
                   <img
                     src={liveScreenshot}
@@ -673,7 +856,24 @@ export default function FillPage() {
                 )}
               </div>
 
-              {/* Quick Controls */}
+              <div className={`${styles.progressWrapper} glass`}>
+                <div className={styles.progressInfo}>
+                  <span>REMOTE UPLINK ESTABLISHED</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+                <div className={styles.progressBar}>
+                  <div
+                    className={styles.progressFill}
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+                <div className={styles.progressMeta}>
+                  <span>{runProgressState.phase}</span>
+                  <span>{runProgressState.index > 0 ? `${runProgressState.index}/${runProgressState.total}` : 'Awaiting item'}</span>
+                  <span>{runProgressState.subject || 'No subject selected'}</span>
+                </div>
+              </div>
+
               {isCaptchaRequired && (
                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                   <button onClick={() => handleKeyPress('Tab')} style={{ background: '#222', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.7rem', border: '1px solid #444' }}>TAB</button>
@@ -712,61 +912,67 @@ export default function FillPage() {
               </AnimatePresence>
             </div>
 
-            {/* ── Command Deck — permanently outside the browser viewport ── */}
-            {!isKilled && (
-              <motion.div
-                className={styles.commandDeck}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <div className={styles.commandDeckTitle}>⚙ COMMAND DECK</div>
-                <div className={styles.commandDeckRow}>
-                  <button
-                    onClick={ensurePaused}
-                    className={`${styles.commandDeckButton} ${isPaused ? styles.commandDeckButtonActive : ''}`}
-                  >
-                    ⏸ Pause Protocol
-                  </button>
-                  <button
-                    onClick={ensureResumed}
-                    className={`${styles.commandDeckButton} ${!isPaused ? styles.commandDeckButtonActive : ''}`}
-                  >
-                    ▶ Resume Protocol
-                  </button>
-                  <button
-                    onClick={handleKill}
-                    className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
-                  >
-                    ⏹ Kill Mission
-                  </button>
-                </div>
-              </motion.div>
-            )}
+            <div className={styles.controlSection}>
+              <div className={styles.logStream} ref={logContainerRef} onScroll={handleLogScroll}>
+                {logs.map(log => (
+                  <div key={log.id} className={styles.logEntry}>
+                    <span className={styles.logTime}>[{log.time}]</span>
+                    <span className={`${styles.logMsg} ${styles[log.type]}`}>
+                      {log.type === 'action' && '▶ '}
+                      {log.type === 'success' && '✓ '}
+                      {log.type === 'error' && '⚠ '}
+                      {log.msg}
+                    </span>
+                  </div>
+                ))}
+              </div>
 
-            {/* Bottom Window: Log Stream */}
-            <div className={styles.logStream}>
-              {logs.map(log => (
-                <div key={log.id} className={styles.logEntry}>
-                  <span className={styles.logTime}>[{log.time}]</span>
-                  <span className={`${styles.logMsg} ${styles[log.type]}`}>
-                    {log.type === 'action' && '▶ '}
-                    {log.type === 'success' && '✓ '}
-                    {log.type === 'error' && '⚠ '}
-                    {log.msg}
-                  </span>
-                </div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
+              {!isKilled && (
+                <motion.div
+                  className={styles.commandDeck}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <div className={styles.commandDeckTitle}>⚙ COMMAND DECK</div>
+                  <div className={styles.commandDeckRow}>
+                    {isPaused ? (
+                      <button
+                        onClick={ensureResumed}
+                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                      >
+                        ▶ Resume Protocol
+                      </button>
+                    ) : (
+                      <button
+                        onClick={ensurePaused}
+                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                      >
+                        ⏸ Pause Protocol
+                      </button>
+                    )}
+                    <button
+                      onClick={handleKill}
+                      className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
+                    >
+                      ⏹ Kill Mission
+                    </button>
+                  </div>
+                </motion.div>
+              )}
 
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
-              <button
-                className="btn-primary"
-                style={{ padding: '0.8rem 2rem', opacity: 0.8 }}
-                onClick={() => setStep('form')}
-              >
-                RETURN TO CONFIG
-              </button>
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
+                <button
+                  className="btn-primary"
+                  style={{ padding: '0.8rem 2rem', opacity: 0.8 }}
+                  onClick={() => {
+                    closeStream();
+                    clearRunState('returned to config');
+                    setStep('form');
+                  }}
+                >
+                  RETURN TO CONFIG
+                </button>
+              </div>
             </div>
           </div>
         </div>
