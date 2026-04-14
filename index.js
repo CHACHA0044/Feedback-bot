@@ -1616,7 +1616,7 @@ async function run(inputConfig = {}) {
   handleNetworkErrors(page);
 
   // Track new tabs/windows — always update activePage so screenshot loop follows automation
-  browser.on('targetcreated', async (target) => {
+  const onTargetCreated = async (target) => {
     if (target.type() === 'page') {
       try {
         const newPage = await target.page();
@@ -1630,7 +1630,8 @@ async function run(inputConfig = {}) {
         // ignore if target already closed
       }
     }
-  });
+  };
+  browser.on('targetcreated', onTargetCreated);
 
   log.success("Browser launched successfully");
 
@@ -1990,6 +1991,9 @@ async function run(inputConfig = {}) {
 
   // Wait before closing
   await delay(5000);
+
+  // Remove the tab-tracking listener before closing browser
+  browser.off('targetcreated', onTargetCreated);
 
   // Close browser in production mode
   if (!IS_LOCAL) {
