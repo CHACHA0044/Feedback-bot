@@ -206,19 +206,17 @@ export default function OpPage() {
     typeTimeoutRef.current = null;
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    queueInteraction(async () => {
-      await fetch(`${backendUrl}/api/interact`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "type", text }),
-      });
-    });
-  }, [queueInteraction]);
+    fetch(`${backendUrl}/api/interact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "type", text }),
+    }).catch(() => undefined);
+  }, []);
 
   const handleBufferedType = useCallback((char: string) => {
     typeBufferRef.current += char;
     if (typeTimeoutRef.current) clearTimeout(typeTimeoutRef.current);
-    typeTimeoutRef.current = setTimeout(flushTypeBuffer, 30);
+    typeTimeoutRef.current = setTimeout(flushTypeBuffer, 15);
   }, [flushTypeBuffer]);
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -564,13 +562,12 @@ export default function OpPage() {
     }
 
     try {
-      queueInteraction(async () => {
-        await fetch(`${backendUrl}/api/interact`, {
+       // Direct non-blocking fetch for clicks to avoid queue delays
+       fetch(`${backendUrl}/api/interact`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'click', x: x_scaled, y: y_scaled })
-        });
-      });
+        }).catch(() => undefined);
     } catch (err) {
       console.error("Interaction failed");
     }
@@ -579,25 +576,21 @@ export default function OpPage() {
   const handleKeyPress = useCallback(async (key: string) => {
     await flushTypeBuffer();
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    queueInteraction(async () => {
-      await fetch(`${backendUrl}/api/interact`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "press", key }),
-      });
-    });
-  }, [flushTypeBuffer, queueInteraction]);
+    fetch(`${backendUrl}/api/interact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "press", key }),
+    }).catch(() => undefined);
+  }, []);
 
   const handleType = useCallback(async (text: string) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    queueInteraction(async () => {
-      await fetch(`${backendUrl}/api/interact`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "type", text }),
-      });
-    });
-  }, [queueInteraction]);
+    fetch(`${backendUrl}/api/interact`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "type", text }),
+    }).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (step !== 'executing') return;

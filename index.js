@@ -1802,7 +1802,7 @@ async function run(inputConfig = {}, ip = 'local') {
       '--no-sandbox',
       '--disable-setuid-sandbox'
     ],
-    defaultViewport: IS_LOCAL ? null : { width: 1366, height: 860 }
+    defaultViewport: IS_LOCAL ? null : { width: 1280, height: 800 }
   });
 
   const page = await browser.newPage();
@@ -2310,10 +2310,10 @@ app.post("/api/interact", async (req, res) => {
     try {
       switch (action) {
         case 'click':
-          await session.activePage.mouse.click(x, y);
+          await session.activePage.mouse.click(x, y, { delay: 50 });
           break;
         case 'type':
-          await session.activePage.keyboard.type(text || key);
+          await session.activePage.keyboard.type(text || key, { delay: 30 });
           break;
         case 'press':
           await session.activePage.keyboard.press(key);
