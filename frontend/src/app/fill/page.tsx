@@ -29,6 +29,15 @@ type LogEntry = {
 const CONFIG_STORAGE_KEY = 'feedback_bot_config';
 const RUN_STORAGE_KEY = 'feedback_bot_active_run';
 
+interface RunProgress {
+  phase: string;
+  index: number;
+  total: number;
+  subject: string;
+  teacher: string;
+  remaining: number;
+}
+
 export default function FillPage() {
   const restoredRunState = (() => {
     if (typeof window === 'undefined') return null;
@@ -118,7 +127,7 @@ export default function FillPage() {
   const [killModalOpen, setKillModalOpen] = useState(false);
   const [isGlobalSyncPulse, setIsGlobalSyncPulse] = useState(false);
   const [crtState, setCrtState] = useState<'off' | 'on' | 'none'>('none');
-  const [runProgressState, setRunProgressState] = useState(restoredRunState?.runProgressState || {
+  const [runProgressState, setRunProgressState] = useState<RunProgress>(restoredRunState?.runProgressState || {
     phase: 'Idle',
     index: 0,
     total: 0,
@@ -126,7 +135,22 @@ export default function FillPage() {
     teacher: '',
     remaining: 0
   });
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const [presetModalOpen, setPresetModalOpen] = useState(false);
+  const [presetMessage, setPresetMessage] = useState('');
+
+  const handleSendPresetRequest = () => {
+    const subject = encodeURIComponent("feedback bot preset request");
+    const body = encodeURIComponent(`FEEDBACK BOT PRESET REQUEST\n\n${presetMessage}\n\nSent from Mission Control.`);
+    window.location.href = `mailto:pdembla@student.iul.ac.in?subject=${subject}&body=${body}`;
+    setPresetModalOpen(false);
+    setPresetMessage('');
+    addLog("Support signal transmitted. Open your mail client to complete sending.", "success");
+  };
+
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
   const shouldAutoFollowRef = useRef(true);
   const interactionQueueRef = useRef<Promise<void>>(Promise.resolve());
   const latestScreenshotRef = useRef<string | null>(null);
@@ -142,7 +166,7 @@ export default function FillPage() {
       msg,
       type
     };
-    setLogs(prev => [...prev, newLog]);
+    setLogs((prev: LogEntry[]) => [...prev, newLog]);
   }, []);
 
   useEffect(() => {
@@ -177,7 +201,7 @@ export default function FillPage() {
   const deriveProgress = useCallback((status: string) => {
     const phaseMatch = status.match(/^PHASE:\s*(.+)$/i);
     if (phaseMatch) {
-      setRunProgressState(prev => ({ ...prev, phase: phaseMatch[1], index: 0, total: 0, remaining: 0 }));
+      setRunProgressState((prev: RunProgress) => ({ ...prev, phase: phaseMatch[1], index: 0, total: 0, remaining: 0 }));
       return;
     }
 
@@ -231,10 +255,11 @@ export default function FillPage() {
   const handleLoadPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const presetName = e.target.value;
     if (presetName && PRESETS[presetName as keyof typeof PRESETS]) {
-      setFormData(prev => ({
+      setFormData((prev: any) => ({
         ...prev,
         ...PRESETS[presetName as keyof typeof PRESETS]
       }));
+      setSelectedPreset(presetName);
       setIsGlobalSyncPulse(true);
       setTimeout(() => setIsGlobalSyncPulse(false), 900);
       addLog(`Preset "${presetName}" loaded into Matrix.`, "success");
@@ -244,7 +269,7 @@ export default function FillPage() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
 
   const queueInteraction = useCallback((task: () => Promise<void>) => {
@@ -628,22 +653,58 @@ export default function FillPage() {
               transition={{ duration: 0.35 }}
             >
               <label className={styles.label}>Load System Preset</label>
-              <select
-                className={styles.select}
-                onChange={handleLoadPreset}
-                defaultValue=""
-              >
-                <option value="" disabled>Select a preset to auto-fill...</option>
-                {Object.keys(PRESETS).map(name => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
+              <div className={styles.customDropdown}>
+                <div 
+                  className={`${styles.dropdownTrigger} ${openDropdown === 'presets' ? styles.open : ''}`}
+                  onClick={() => setOpenDropdown(openDropdown === 'presets' ? null : 'presets')}
+                >
+                  <span>{selectedPreset || "Select a preset to auto-fill..."}</span>
+                  <span className={`${styles.dropdownArrow} ${openDropdown === 'presets' ? styles.open : ''}`}>▼</span>
+                </div>
+                <AnimatePresence>
+                  {openDropdown === 'presets' && (
+                    <motion.div 
+                      className={styles.dropdownMenu}
+                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                    >
+                      {Object.keys(PRESETS).map(name => (
+                        <div 
+                          key={name} 
+                          className={`${styles.dropdownItem} ${selectedPreset === name ? styles.dropdownItemActive : ''}`}
+                          onClick={() => {
+                            handleLoadPreset({ target: { value: name } } as any);
+                            setOpenDropdown(null);
+                          }}
+                        >
+                          {name}
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              <div className={styles.presetRequestWrapper}>
+                <span>want your own preset?</span>
+                <button 
+                  type="button" 
+                  className={styles.mailEmojiBtn}
+                  onClick={() => setPresetModalOpen(true)}
+                  title="Request Custom Preset"
+                >
+                  🖂
+                </button>
+              </div>
             </motion.div>
           </div>
 
           {/* Section 2: Theory */}
           <div className={`${styles.section} glass`}>
-            <h2 className={styles.sectionTitle}>Section 02 - Theory Matrix</h2>
+            <div className={styles.sectionTitle}>
+              <span>Section 02 - Theory Matrix</span>
+            </div>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Subject Codes (comma-separated)</label>
@@ -672,7 +733,9 @@ export default function FillPage() {
 
           {/* Section 3: Lab */}
           <div className={`${styles.section} glass`}>
-            <h2 className={styles.sectionTitle}>Section 03 - Lab Modules</h2>
+            <div className={styles.sectionTitle}>
+              <span>Section 03 - Lab Modules</span>
+            </div>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Lab Codes</label>
@@ -701,7 +764,9 @@ export default function FillPage() {
 
           {/* Section 4: Mentor */}
           <div className={`${styles.section} glass`}>
-            <h2 className={styles.sectionTitle}>Section 04 - Mentor Directive</h2>
+            <div className={styles.sectionTitle}>
+              <span>Section 04 - Mentor Directive</span>
+            </div>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Department</label>
@@ -730,7 +795,9 @@ export default function FillPage() {
 
           {/* Section 5: Teaching & Learning */}
           <div className={`${styles.section} glass`}>
-            <h2 className={styles.sectionTitle}>Section 05 - Learning Protocols</h2>
+            <div className={styles.sectionTitle}>
+              <span>Section 05 - Learning Protocols</span>
+            </div>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
                 <label className={styles.label}>Subject Codes</label>
@@ -759,7 +826,9 @@ export default function FillPage() {
 
           {/* Section 6: Feedback Option */}
           <div className={`${styles.section} glass`}>
-            <h2 className={styles.sectionTitle}>Section 06 - Sentiment Bias</h2>
+            <div className={styles.sectionTitle}>
+              <span>Section 06 - Sentiment Bias</span>
+            </div>
             <motion.div
               className={`${styles.inputGroup} ${styles.glassControl}`}
               initial={{ opacity: 0, y: 8 }}
@@ -767,24 +836,108 @@ export default function FillPage() {
               transition={{ duration: 0.35, delay: 0.05 }}
             >
               <label className={styles.label}>Response Strategy</label>
-              <select
-                name="feedbackOption"
-                className={styles.select}
-                value={formData.feedbackOption}
-                onChange={handleInputChange}
-              >
-                <option value="Never">Never</option>
-                <option value="Rarely">Rarely</option>
-                <option value="Occasionally">Occasionally</option>
-                <option value="Mostly">Mostly</option>
-                <option value="Always">Always</option>
-              </select>
+              <div className={styles.customDropdown}>
+                <div 
+                  className={`${styles.dropdownTrigger} ${openDropdown === 'strategy' ? styles.open : ''}`}
+                  onClick={() => setOpenDropdown(openDropdown === 'strategy' ? null : 'strategy')}
+                >
+                  <span>{formData.feedbackOption}</span>
+                  <span className={`${styles.dropdownArrow} ${openDropdown === 'strategy' ? styles.open : ''}`}>▼</span>
+                </div>
+                <AnimatePresence>
+                  {openDropdown === 'strategy' && (
+                    <motion.div 
+                      className={styles.dropdownMenu}
+                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                    >
+                      {["Never", "Rarely", "Occasionally", "Mostly", "Always"].map(opt => (
+                        <div 
+                          key={opt} 
+                          className={`${styles.dropdownItem} ${formData.feedbackOption === opt ? styles.dropdownItemActive : ''}`}
+                          onClick={() => {
+                            handleInputChange({ target: { name: 'feedbackOption', value: opt } } as any);
+                            setOpenDropdown(null);
+                          }}
+                        >
+                          {opt}
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </motion.div>
           </div>
 
           <button type="submit" className="btn-primary" style={{ marginTop: '2rem', width: '100%', padding: '1.5rem', fontSize: '1.2rem' }}>
             Initiate Protocol
           </button>
+
+          {/* ── Preset Request Modal ── */}
+          <AnimatePresence>
+            {presetModalOpen && (
+              <motion.div 
+                className={styles.modalOverlay}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setPresetModalOpen(false)}
+              >
+                <motion.div 
+                  className={styles.modalContent}
+                  initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                  animate={{ scale: 1, opacity: 1, y: 0 }}
+                  exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button type="button" className={styles.modalClose} onClick={() => setPresetModalOpen(false)}>✕</button>
+                  <div className={styles.modalHeader}>
+                    <div className={styles.modalTitle}>🖂 Request Custom Preset</div>
+                    <span className={styles.modalSubtext}>Transmit your configuration requirements to support.</span>
+                    <span className={styles.modalSubtext}>Your preset might not be here, but by creating it once u can help others of your class.</span>
+                  </div>
+                  <div className={styles.modalBody}>
+                    <div className={styles.formatGuide}>
+                      <strong>Recommended Format:</strong><br/>
+                      # Class/Section Info<br/>
+                      CLASS_INFO=Sem6, Yr 3, CCAI B<br/><br/>
+                      # Theory subjects and teachers<br/>
+                      THEORY_SUBJECTS=CG302,CS305,CS313,CS315,CS348,CS394,EC339<br/>
+                      THEORY_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Akhlaque Ahmad Khan<br/><br/>
+                      # Lab subjects and teachers<br/>
+                      LAB_SUBJECTS=CS306,CS314,CS396<br/>
+                      LAB_TEACHERS=Falak Alam,Naziya Anjum,Mr. Sunil Singh<br/><br/>
+                      # Mentor details<br/>
+                      MENTOR_DEPT=Computer Science<br/>
+                      MENTOR_NAME=Nida Khan<br/><br/>
+                      # Teaching & Learning<br/>
+                      TEACHING_SUBJECTS=CG302,CS305,CS303,CS306,CS313,CS315,CS348,CS394,CS396,EC339<br/>
+                      TEACHING_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan<br/><br/>
+                      # Feedback option<br/>
+                      FEEDBACK_OPTION=Always
+                    </div>
+                    <textarea 
+                      className={styles.modalTextarea}
+                      placeholder="Enter your preset details or request here..."
+                      value={presetMessage}
+                      onChange={(e) => setPresetMessage(e.target.value)}
+                    />
+                    <button 
+                      type="button"
+                      className="btn-primary" 
+                      style={{ width: '100%', padding: '1rem' }}
+                      onClick={handleSendPresetRequest}
+                    >
+                      SUBMIT REQUEST
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </form>
       ) : (
         <div className={styles.executionPanel}>
