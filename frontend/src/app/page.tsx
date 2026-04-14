@@ -123,7 +123,7 @@ export default function LandingPage() {
         </p>
         
         <div className={styles.ctaWrapper}>
-          <Link href="/fill" className="btn-primary" style={{ padding: '1.2rem 3rem', fontSize: '1rem' }}>
+          <Link href="/op" className="btn-primary" style={{ padding: '1.2rem 3rem', fontSize: '1rem' }}>
             Fill Feedback
           </Link>
           <a href="#demo" className={styles.secondaryLink}>
@@ -137,7 +137,7 @@ export default function LandingPage() {
           <div key={idx} className="scroll-animate" style={{ transitionDelay: `${idx * 0.1}s` }}>
             <ElectricBorder
               color="#ffffff" // White lightning
-              speed={1}
+              speed={1.5}
               chaos={0.12}
               thickness={2}
               borderRadius={20}

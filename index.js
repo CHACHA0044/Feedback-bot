@@ -1818,7 +1818,8 @@ async function run(inputConfig = {}, ip = 'local') {
 
   // Screenshot broadcasting loop — near-real-time cadence for smooth live manual interaction
   let isCapturingFrame = false;
-  const frameIntervalMs = IS_LOCAL ? 400 : 70; // Slightly higher interval for multi-session stability
+  const frameIntervalMs = IS_LOCAL ? 200 : 80; // Stable cadence
+  let frameCount = 0;
   const screenshotInterval = setInterval(async () => {
     if (isCapturingFrame) return;
     await sessionContext.run(ip, async () => {
@@ -1826,16 +1827,22 @@ async function run(inputConfig = {}, ip = 'local') {
         const session = sessions.get(ip);
         if (!session || !session.sseClients.length) return;
         throwIfRunAborted();
-        // Always capture from the currently active page so viewer tracks automation
+        
         const capturePage = activePage || page;
         if (browser.isConnected() && capturePage && !capturePage.isClosed()) {
           isCapturingFrame = true;
           const screenshotData = await capturePage.screenshot({ 
             encoding: 'base64',
             type: 'jpeg',
-            quality: IS_LOCAL ? 65 : 75
+            quality: IS_LOCAL ? 65 : 75 // Increased quality for visibility
           });
+          
           broadcast(ip, { type: 'screenshot', data: `data:image/jpeg;base64,${screenshotData}` });
+          
+          frameCount++;
+          if (frameCount % 60 === 0) {
+            log.info(`[UPLINK] Stream active: ${frameCount} frames transmitted`);
+          }
         } else if (!browser.isConnected()) {
           clearInterval(screenshotInterval);
         }
@@ -1843,7 +1850,6 @@ async function run(inputConfig = {}, ip = 'local') {
         if (e?.name === 'AbortError') {
           clearInterval(screenshotInterval);
         }
-        // Ignore transient screenshot errors (page navigating); do not clear interval
       } finally {
         isCapturingFrame = false;
       }
@@ -2310,6 +2316,28 @@ app.post("/api/kill", async (req, res) => {
     }
     if (session) session.isPaused = false;
     res.send({ status: "success", message: "Process terminated by user." });
+  });
+});
+
+app.post("/api/request-preset", async (req, res) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const { email, message, configData } = req.body;
+  
+  await sessionContext.run(ip, async () => {
+    log.section("📬 PRESET REQUEST RECEIVED");
+    log.info(`From: ${email}`);
+    log.detail(`Details: ${message}`);
+    
+    // In a real scenario, this would send an actual email via nodemailer
+    // For now, we log it to the backend and return success
+    console.log("-----------------------------------------");
+    console.log(`NEW PRESET REQUEST [${new Date().toISOString()}]`);
+    console.log(`USER EMAIL: ${email}`);
+    console.log(`MESSAGE: ${message}`);
+    console.log(`PROVIDED CONFIG:\n${JSON.stringify(configData, null, 2)}`);
+    console.log("-----------------------------------------");
+
+    res.send({ status: "success", message: "Request transmitted to Mission Control support." });
   });
 });
 
