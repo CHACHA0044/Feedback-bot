@@ -384,25 +384,25 @@ function parseConfiguration(config = {}) {
   } = process.env;
 
   // When frontend provides config, it is AUTHORITATIVE — no .env fallback
-  const enrollmentNo = config.studentId || config.ENROLLMENT_NO || envEnrollment;
-  const password = config.password || config.PASSWORD || envPassword;
-  const feedbackOptionRaw = config.feedbackOption ?? config.FEEDBACK_OPTION ?? envFeedback ?? 'Always';
+  const enrollmentNo = config.studentId || config.ENROLLMENT_NO || null;
+  const password = config.password || config.PASSWORD || null;
+  const feedbackOptionRaw = config.feedbackOption ?? config.FEEDBACK_OPTION ?? 'Always';
   const feedbackOption = (typeof feedbackOptionRaw === 'string' && feedbackOptionRaw.trim()) ? feedbackOptionRaw.trim() : 'Always';
 
-  const mentorDept = config.mentorDept || config.MENTOR_DEPT || (hasConfig ? null : envMentorDept);
-  const mentorName = config.mentorName || config.MENTOR_NAME || (hasConfig ? null : envMentorName);
+  const mentorDept = config.mentorDept || config.MENTOR_DEPT || null;
+  const mentorName = config.mentorName || config.MENTOR_NAME || null;
 
-  const theorySubjects = config.theoryCodes || config.THEORY_SUBJECTS || (hasConfig ? null : envTheorySub);
-  const theoryTeachers = config.theoryTeachers || config.THEORY_TEACHERS || (hasConfig ? null : envTheoryTea);
+  const theorySubjects = config.theoryCodes || config.THEORY_SUBJECTS || "";
+  const theoryTeachers = config.theoryTeachers || config.THEORY_TEACHERS || "";
 
-  const labSubjects = config.labCodes || config.LAB_SUBJECTS || (hasConfig ? null : envLabSub);
-  const labTeachers = config.labTeachers || config.LAB_TEACHERS || (hasConfig ? null : envLabTea);
+  const labSubjects = config.labCodes || config.LAB_SUBJECTS || "";
+  const labTeachers = config.labTeachers || config.LAB_TEACHERS || "";
 
-  const teachingSubjects = config.teachingCodes || config.TEACHING_SUBJECTS || (hasConfig ? null : envTeachingSub);
-  const teachingTeachers = config.teachingTeachers || config.TEACHING_TEACHERS || (hasConfig ? null : envTeachingTea);
+  const teachingSubjects = config.teachingCodes || config.TEACHING_SUBJECTS || "";
+  const teachingTeachers = config.teachingTeachers || config.TEACHING_TEACHERS || "";
 
   const isLocal = !envEnv || envEnv.toLowerCase() === 'local';
-  const pageZoom = config.PAGE_ZOOM || process.env.PAGE_ZOOM || '80';
+  const pageZoom = config.PAGE_ZOOM || '80';
 
   // Helper for creating ordered pair lists instead of maps (preserves duplicates)
   const createPairList = (subStr, teaStr) => {
