@@ -567,7 +567,8 @@ export default function OpPage() {
     
     const img = e.currentTarget;
     const { naturalWidth, naturalHeight } = img;
-    const imageRatio = naturalWidth / naturalHeight;
+    const imageRatio = naturalWidth / (naturalHeight || 1);
+    const containerRatio = rect.width / (rect.height || 1);
 
     let drawnWidth = rect.width;
     let drawnHeight = rect.height;
