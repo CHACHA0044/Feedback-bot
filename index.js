@@ -1868,9 +1868,7 @@ async function run(inputConfig = {}, ip = 'local') {
           broadcast(ip, { type: 'screenshot', data: `data:image/jpeg;base64,${screenshotData}` });
           
           frameCount++;
-          if (frameCount % 60 === 0) {
-            log.info(`[UPLINK] Stream active: ${frameCount} frames transmitted`);
-          }
+          // Stream active telemetry disabled for clarity
         } else if (!browser.isConnected()) {
           clearInterval(screenshotInterval);
         }

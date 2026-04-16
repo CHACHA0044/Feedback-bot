@@ -533,7 +533,10 @@ export default function OpPage() {
     try {
       await fetch(`${backendUrl}/api/resume`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        },
         body: JSON.stringify({ captcha: captchaSolution })
       });
       setIsCaptchaRequired(false);
@@ -671,7 +674,6 @@ export default function OpPage() {
 
       if (e.key.length === 1) {
         e.preventDefault();
-        addLog(`KEY_CAPTURE: [${e.key}]`, "info");
         void handleType(e.key);
       }
     };
@@ -694,7 +696,13 @@ export default function OpPage() {
     setIsPaused(paused); // Optimistic update
     try {
       const endpoint = paused ? '/api/pause' : '/api/resume-protocol';
-      await fetch(`${backendUrl}${endpoint}`, { method: 'POST' });
+      await fetch(`${backendUrl}${endpoint}`, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        }
+      });
       addLog(`SYSTEM: Protocol ${paused ? 'Paused' : 'Resumed'}`, "action");
       persistRunState(paused ? 'paused' : 'resumed');
     } catch (_) {
@@ -707,7 +715,13 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     try {
       addLog("Logging out and closing browser...", "action");
-      await fetch(`${backendUrl}/api/logout`, { method: 'POST' });
+      await fetch(`${backendUrl}/api/logout`, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        }
+      });
     } catch (_) {}
     setStep('form');
     setLogs([]);
