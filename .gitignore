@@ -9,3 +9,5 @@ dist/
 build/
 .next/
 out/
+eng.traineddata
+frontend/public/Frijole,Nunito/Frijole/Frijole-Regular.ttf
