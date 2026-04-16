@@ -728,10 +728,11 @@ async function navigateToURL(page, url, pageName) {
     log.action(`Navigating to ${pageName}...`);
     log.detail(`URL: ${url}`);
 
+    const targetPage = getCurrentSession().activePage || page;
     try {
-      await page.goto(url, {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000
+      await targetPage.goto(url, {
+        waitUntil: 'networkidle2',
+        timeout: 30000
       });
       await delay(800);
       
@@ -754,8 +755,7 @@ async function navigateToURL(page, url, pageName) {
       return false;
     }
   }
-
-  await ensurePageVisible(page);
+  await ensurePageVisible(targetPage);
 }
 
 async function getCurrentPageInfo(page) {
@@ -1307,6 +1307,7 @@ async function submitForm(page, selector) {
 
 // ============= FIXED THEORY FEEDBACK - STOPS IMMEDIATELY ON DUPLICATE =============
 async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption) {
+  page = getCurrentSession().activePage || page;
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher name provided`);
@@ -1425,6 +1426,7 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
 
 // ============= FIXED LAB FEEDBACK =============
 async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption) {
+  page = getCurrentSession().activePage || page;
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
@@ -1533,6 +1535,7 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
 
 // ============= FIXED MENTOR FEEDBACK =============
 async function submitMentorFeedback(page, dept, name, feedbackOption) {
+  page = getCurrentSession().activePage || page;
   throwIfRunAborted();
   if (!dept || !name) {
     log.skip('Skipping Mentor - Missing data');
@@ -1625,6 +1628,7 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
 
 // ============= FIXED TEACHING FEEDBACK =============
 async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOption) {
+  page = getCurrentSession().activePage || page;
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
@@ -1928,10 +1932,10 @@ async function run(inputConfig = {}, ip = 'local') {
 
   log.success("Proceeding after manual login... ✓");
 
-  await page.evaluate((zoom) => {
-    document.body.style.zoom = zoom + "%";
-  }, pageZoom);
-  log.info(`Auto-zoom adjustment confirmed: ${pageZoom}%`, 2);
+  await page.evaluate(() => {
+    document.body.style.zoom = "100%";
+  });
+  log.info(`Resetting workspace view (Zoom: 100%)`, 2);
 
   await ensurePageVisible(page);
   log.success("Login successful! ✓");
@@ -2074,7 +2078,8 @@ async function run(inputConfig = {}, ip = 'local') {
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
       broadcast(ip, { type: 'status_update', msg: `Lab ${index}/${labList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
 
-      const result = await submitLabFeedback(page, subjectCode, teacherName, feedbackOption);
+      const currentPage = getCurrentSession().activePage || page;
+    const result = await submitLabFeedback(currentPage, subjectCode, teacherName, feedbackOption);
 
       if (result === true) {
         stats.totalSubmissions++;
@@ -2098,7 +2103,8 @@ async function run(inputConfig = {}, ip = 'local') {
     log.info(`Dept: ${mentorDept || 'NOT PROVIDED'}, Name: ${mentorName || 'NOT PROVIDED'}`);
     broadcast(ip, { type: 'status_update', msg: `Mentor: ${mentorName || 'N/A'} (${mentorDept || 'N/A'})` });
 
-    const result = await submitMentorFeedback(page, mentorDept, mentorName, feedbackOption);
+    const currentPage = getCurrentSession().activePage || page;
+    const result = await submitMentorFeedback(currentPage, mentorDept, mentorName, feedbackOption);
 
     if (result === true) {
       stats.totalSubmissions++;
@@ -2130,7 +2136,8 @@ async function run(inputConfig = {}, ip = 'local') {
       log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
       broadcast(ip, { type: 'status_update', msg: `Teaching ${index}/${teachingList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
 
-      const result = await submitTeachingFeedback(page, subjectCode, teacherName, feedbackOption);
+      const currentPage = getCurrentSession().activePage || page;
+      const result = await submitTeachingFeedback(currentPage, subjectCode, teacherName, feedbackOption);
 
       if (result === true) {
         stats.totalSubmissions++;
