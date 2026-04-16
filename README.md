@@ -1,8 +1,8 @@
 ---
-title: Feedback Bot
-emoji: 🤖
-colorFrom: yellow
-colorTo: black
+title: feedbackbot
+emoji: 🚀
+colorFrom: blue
+colorTo: purple
 sdk: docker
 ---
 
