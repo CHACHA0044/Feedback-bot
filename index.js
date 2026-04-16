@@ -1,3 +1,4 @@
+import express from "express";
 import puppeteer from "puppeteer";
 import dotenv from "dotenv";
 import path from "path";
