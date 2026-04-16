@@ -1775,7 +1775,6 @@ async function run(inputConfig = {}, ip = 'local') {
     headless: IS_LOCAL ? false : "new",
     slowMo: IS_LOCAL ? 30 : 0,
     args: [
-      '--start-maximized',
       '--disable-blink-features=AutomationControlled',
       '--disable-web-security',
       '--disable-features=IsolateOrigins,site-per-process',
@@ -2239,7 +2238,7 @@ async function run(inputConfig = {}, ip = 'local') {
 
 // ============= WEB SERVER ENDPOINTS =============
 app.post("/api/resume", (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   sessionContext.run(ip, () => {
     const session = getCurrentSession();
     if (session?.resumeResolve) {
@@ -2254,7 +2253,7 @@ app.post("/api/resume", (req, res) => {
 });
 
 app.post("/api/interact", async (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   const { action, x, y, key, text } = req.body;
   
   await sessionContext.run(ip, async () => {
@@ -2285,7 +2284,7 @@ app.post("/api/interact", async (req, res) => {
 });
 
 app.post("/api/pause", (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   sessionContext.run(ip, () => {
     const session = getCurrentSession();
     if (!session?.stats?.startTime) {
@@ -2299,7 +2298,7 @@ app.post("/api/pause", (req, res) => {
 });
 
 app.post("/api/resume-protocol", (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   sessionContext.run(ip, () => {
     const session = getCurrentSession();
     if (!session?.stats?.startTime) {
@@ -2313,10 +2312,10 @@ app.post("/api/resume-protocol", (req, res) => {
 });
 
 app.post("/api/kill", async (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   await sessionContext.run(ip, async () => {
     const session = getCurrentSession();
-    log.section("🛑 EMERGENCY KILL COMMAND RECEIVED");
+    log.section("EMERGENCY KILL COMMAND RECEIVED");
     broadcast(ip, { type: 'status_update', msg: 'TERMINATING_ALL_PROCESSES' });
     broadcast(ip, { type: 'log', level: 'error', msg: 'Process terminated by user' });
 
@@ -2334,7 +2333,7 @@ app.post("/api/kill", async (req, res) => {
 });
 
 app.post("/api/request-preset", async (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   const { email, message, configData } = req.body;
   
   await sessionContext.run(ip, async () => {
@@ -2356,7 +2355,7 @@ app.post("/api/request-preset", async (req, res) => {
 });
 
 app.get("/api/stream", (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   
   res.writeHead(200, {
     "Content-Type": "text/event-stream",

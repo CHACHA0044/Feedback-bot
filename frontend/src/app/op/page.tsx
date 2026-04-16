@@ -98,6 +98,7 @@ export default function OpPage() {
   const crosshairRef = useRef<HTMLDivElement>(null);
   const [isHoveringBrowser, setIsHoveringBrowser] = useState(false);
   const [requestEmail, setRequestEmail] = useState('');
+  const [sessionId] = useState(() => `sess-${Math.random().toString(36).substr(2, 9)}`);
   const [isSendingPreset, setIsSendingPreset] = useState(false);
   const [summary, setSummary] = useState<{
     success: number;
@@ -377,7 +378,7 @@ export default function OpPage() {
   const connectStream = useCallback(() => {
     closeStream();
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    const eventSource = new EventSource(`${backendUrl}/api/stream`);
+    const eventSource = new EventSource(`${backendUrl}/api/stream?sessionId=${sessionId}`);
     streamRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
@@ -523,6 +524,7 @@ export default function OpPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-session-id': sessionId
         },
         body: JSON.stringify(executionPayload),
       });
@@ -603,9 +605,12 @@ export default function OpPage() {
 
     try {
        // Direct non-blocking fetch for clicks to avoid queue delays
-       fetch(`${backendUrl}/api/interact`, {
+        fetch(`${backendUrl}/api/interact`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-session-id': sessionId
+          },
           body: JSON.stringify({ action: 'click', x: x_scaled, y: y_scaled })
         }).catch(() => undefined);
     } catch (err) {
@@ -627,7 +632,10 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     fetch(`${backendUrl}/api/interact`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "x-session-id": sessionId
+      },
       body: JSON.stringify({ action: "type", text }),
     }).catch(() => undefined);
   }, []);
