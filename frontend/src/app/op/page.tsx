@@ -229,10 +229,13 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     fetch(`${backendUrl}/api/interact`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "x-session-id": sessionId
+      },
       body: JSON.stringify({ action: "type", text }),
     }).catch(() => undefined);
-  }, []);
+  }, [sessionId]);
 
   const handleBufferedType = useCallback((char: string) => {
     typeBufferRef.current += char;
@@ -630,10 +633,13 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     fetch(`${backendUrl}/api/interact`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "x-session-id": sessionId
+      },
       body: JSON.stringify({ action: "press", key }),
     }).catch(() => undefined);
-  }, []);
+  }, [sessionId]);
 
   const handleType = useCallback(async (text: string) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
@@ -645,7 +651,7 @@ export default function OpPage() {
       },
       body: JSON.stringify({ action: "type", text }),
     }).catch(() => undefined);
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     if (step !== 'executing') return;
@@ -684,6 +690,7 @@ export default function OpPage() {
 
       if (e.key.length === 1) {
         e.preventDefault();
+        addLog(`KEYBOARD_INPUT: [${e.key}]`, "info");
         handleBufferedType(e.key);
       }
     };
