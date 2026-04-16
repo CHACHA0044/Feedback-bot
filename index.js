@@ -16,6 +16,8 @@ app.use(cors({
   methods: ['GET', 'POST'],
   credentials: true
 }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const PORT = process.env.PORT || 7860;
 
 app.get("/", (req, res) => {
