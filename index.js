@@ -1780,7 +1780,13 @@ async function run(inputConfig = {}, ip = 'local') {
       '--disable-web-security',
       '--disable-features=IsolateOrigins,site-per-process',
       '--no-sandbox',
-      '--disable-setuid-sandbox'
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process'
     ],
     defaultViewport: isMobile 
       ? { width: 375, height: 667, isMobile: true, hasTouch: true } 
@@ -1839,7 +1845,7 @@ async function run(inputConfig = {}, ip = 'local') {
 
   // Screenshot broadcasting loop — near-real-time cadence for smooth live manual interaction
   let isCapturingFrame = false;
-  const frameIntervalMs = IS_LOCAL ? 200 : 80; // Stable cadence
+  const frameIntervalMs = IS_LOCAL ? 100 : 40; // High performance cadence (25fps)
   let frameCount = 0;
   const screenshotInterval = setInterval(async () => {
     if (isCapturingFrame) return;
@@ -1855,7 +1861,7 @@ async function run(inputConfig = {}, ip = 'local') {
           const screenshotData = await capturePage.screenshot({ 
             encoding: 'base64',
             type: 'jpeg',
-            quality: IS_LOCAL ? 65 : 75 // Increased quality for visibility
+            quality: 40
           });
           
           broadcast(ip, { type: 'screenshot', data: `data:image/jpeg;base64,${screenshotData}` });

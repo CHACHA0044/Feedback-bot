@@ -565,9 +565,9 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const rect = e.currentTarget.getBoundingClientRect();
     
-    // Correctly scale click based on object-fit: contain intrinsic offsets
-    const containerRatio = rect.width / rect.height;
-    const imageRatio = 1280 / 800; // Native resolution of Puppeteer
+    const img = e.currentTarget;
+    const { naturalWidth, naturalHeight } = img;
+    const imageRatio = naturalWidth / naturalHeight;
 
     let drawnWidth = rect.width;
     let drawnHeight = rect.height;
@@ -588,8 +588,8 @@ export default function OpPage() {
     // Ignore clicks on letterbox bars
     if (clickX < 0 || clickX > drawnWidth || clickY < 0 || clickY > drawnHeight) return;
 
-    const x_scaled = (clickX / drawnWidth) * 1280;
-    const y_scaled = (clickY / drawnHeight) * 800;
+    const x_scaled = (clickX / drawnWidth) * naturalWidth;
+    const y_scaled = (clickY / drawnHeight) * naturalHeight;
 
     // Visual feedback
     setClickIndicator({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: Date.now() });

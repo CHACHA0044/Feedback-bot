@@ -27,7 +27,8 @@ COPY . .
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
-    PORT=7860
+    PORT=7860 \
+    NODE_OPTIONS="--max-old-space-size=8192"
 
 # Expose the application port
 EXPOSE 7860

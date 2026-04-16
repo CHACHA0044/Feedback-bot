@@ -17,6 +17,8 @@ A high-performance, resilient automation suite designed for the IUSMS feedback p
 - **📱 Responsive Uplink**: Mobile-optimized dashboard with a live remote-view window.
 - **🛰️ Multi-Session Core**: Powered by `AsyncLocalStorage` to handle multiple concurrent users via IP-based isolation.
 - **⚡ High-Speed Protocols**: Optimized navigation and form handling with sub-300ms inter-subject delays.
+- **💎 Ultra-Smooth Stream**: 25FPS live remote view with dynamic click-scaling and low-latency JPEG compression.
+- **🔋 Resource Optimized**: Fully utilizes 16GB RAM overhead with allocated 8GB Node.js heap and hardware-accelerated Chromium flags.
 - **📊 Mission Reports**: Detailed post-run summaries including success rates, duplicates, and category breakdowns.
 
 ## 🛠️ Deployment Protocols
