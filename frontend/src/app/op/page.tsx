@@ -607,7 +607,6 @@ export default function OpPage() {
   };
 
   const handleKeyPress = useCallback(async (key: string) => {
-    await flushTypeBuffer();
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     fetch(`${backendUrl}/api/interact`, {
       method: "POST",
