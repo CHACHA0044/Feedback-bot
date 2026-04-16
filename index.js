@@ -2382,7 +2382,7 @@ app.get("/api/stream", (req, res) => {
 });
 
 app.post("/api/logout", async (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   await sessionContext.run(ip, async () => {
     const session = getCurrentSession();
     if (session?.activeBrowser) {
@@ -2400,7 +2400,7 @@ app.post("/api/logout", async (req, res) => {
 });
 
 app.post("/api/execute", async (req, res) => {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   
   await sessionContext.run(ip, async () => {
     log.section("API EXECUTION TRIGGERED");
