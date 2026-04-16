@@ -19,6 +19,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const PORT = process.env.PORT || 7860;
+let activeRun = null; // Declare globally for use in throwIfRunAborted
 
 app.get("/", (req, res) => {
   res.send(`
@@ -643,29 +644,51 @@ function isRunAborted() {
 }
 
 function throwIfRunAborted() {
-  if (isRunAborted()) {
-    const err = new Error(activeRun?.terminatedByUser ? "Process terminated by user" : "Run aborted");
+  const session = getCurrentSession();
+  const run = session?.activeRun || activeRun;
+  if (run?.abortController?.signal?.aborted) {
+    const err = new Error(run?.terminatedByUser ? "Process terminated by user" : "Run aborted");
     err.name = "AbortError";
     throw err;
   }
 }
 
 async function delay(ms) {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
+  let remaining = ms;
+  while (remaining > 0) {
     throwIfRunAborted();
-    if (isPaused) {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      continue;
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await waitWhilePaused();
+    const step = Math.min(remaining, 100);
+    await new Promise(resolve => setTimeout(resolve, step));
+    remaining -= step;
   }
 }
 
 async function waitWhilePaused() {
-  while (getCurrentSession()?.isPaused) {
-    throwIfRunAborted();
-    await new Promise(resolve => setTimeout(resolve, 300));
+  const session = getCurrentSession();
+  if (session?.isPaused) {
+    if (!session._wasPausedLogged) {
+      log.info("SYSTEM: Protocol Paused", 2);
+      session._wasPausedLogged = true;
+    }
+    
+    // Broadcast status to ensure UI is in sync
+    const ip = sessionContext.getStore();
+    if (ip) {
+      broadcast(ip, { type: 'status_update', msg: 'PROTOCOL_PAUSED' });
+    }
+
+    // Use the captured 'session' reference to avoid AsyncLocalStorage context loss in while loop
+    while (session.isPaused) {
+      throwIfRunAborted();
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    log.info("SYSTEM: Protocol Resumed", 2);
+    session._wasPausedLogged = false;
+    if (ip) {
+      broadcast(ip, { type: 'status_update', msg: 'PROTOCOL_RESUMED' });
+    }
   }
 }
 
@@ -713,6 +736,7 @@ async function handleMultiPageNavigation(page, startUrl) {
 }
 
 async function navigateToURL(page, url, pageName) {
+  await waitWhilePaused();
   throwIfRunAborted();
   if (IS_LOCAL) {
     // Local mode - use JavaScript navigation
@@ -725,21 +749,43 @@ async function navigateToURL(page, url, pageName) {
     await delay(600);
   } else {
     // Production mode - actual page navigation
+    await waitWhilePaused();
     log.action(`Navigating to ${pageName}...`);
     log.detail(`URL: ${url}`);
 
-    const targetPage = getCurrentSession().activePage || page;
+    const session = getCurrentSession();
+    const targetPage = session.activePage || page;
     try {
-      await targetPage.goto(url, {
+      if (targetPage.isClosed()) {
+        log.warning("Active page was closed unexpectedly, falling back to base page...");
+        session.activePage = page;
+      }
+      
+      const actualPage = session.activePage || page;
+      await actualPage.bringToFront();
+      
+      // Force all links to open in current tab by stripping target="_blank"
+      // This prevents "Detached Frame" errors caused by accidental tab proliferation
+      await actualPage.evaluate(() => {
+        const preventPopups = () => {
+          document.querySelectorAll('a[target="_blank"]').forEach(a => a.removeAttribute('target'));
+          document.querySelectorAll('form[target="_blank"]').forEach(f => f.removeAttribute('target'));
+        };
+        preventPopups();
+        // Also observe for dynamic links
+        const obs = new MutationObserver(preventPopups);
+        obs.observe(document.body, { childList: true, subtree: true });
+      }).catch(() => {});
+
+      await actualPage.goto(url, {
         waitUntil: 'networkidle2',
         timeout: 30000
       });
       await delay(800);
       
       // Re-apply zoom after navigation persistence
-      const session = getCurrentSession();
       if (session && session.pageZoom) {
-        await page.evaluate((z) => {
+        await targetPage.evaluate((z) => {
           document.body.style.zoom = z + "%";
         }, session.pageZoom);
       }
@@ -903,6 +949,7 @@ function markFeedbackSubmitted(category, subject, teacher) {
 
 // ============= PAGE INTERACTION FUNCTIONS =============
 async function fillAllQuestions(page, preferredOption) {
+  await waitWhilePaused();
   throwIfRunAborted();
   log.action("Filling feedback questions...");
   await delay(300);
@@ -1204,6 +1251,7 @@ async function navigateToPage(page, pageName) {
 
 // ============= SUBMIT FORM FUNCTION =============
 async function submitForm(page, selector) {
+  await waitWhilePaused();
   throwIfRunAborted();
   try {
     log.action("Preparing to submit form...", 2);
@@ -1280,7 +1328,7 @@ async function submitForm(page, selector) {
 
     // Method 1: Direct click
     try {
-      await page.click(foundSelector);
+      await waitWhilePaused(); await page.click(foundSelector);
       log.detail("Click executed");
     } catch (clickError) {
       log.warning(`Direct click failed: ${clickError.message}`, 2);
@@ -1307,7 +1355,10 @@ async function submitForm(page, selector) {
 
 // ============= FIXED THEORY FEEDBACK - STOPS IMMEDIATELY ON DUPLICATE =============
 async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption) {
-  page = getCurrentSession().activePage || page;
+  const session = getCurrentSession();
+  page = session.activePage || page;
+  if (session) session.activePage = page;
+  await page.bringToFront();
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher name provided`);
@@ -1317,9 +1368,11 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
   }
 
   await navigateToPage(page, 'theory');
+  await waitWhilePaused();
 
   try {
     await page.waitForSelector('#ContentPlaceHolder1_ddlSubject', { visible: true, timeout: 5000 });
+    await waitWhilePaused();
   } catch (e) {
     log.error("❌ Theory page did not load", 2);
     stats.totalFailed++;
@@ -1335,8 +1388,11 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
     return false;
   }
 
+  await waitWhilePaused();
   await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
-  await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
+  await waitWhilePaused();
+  await waitWhilePaused(); await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
+  await waitWhilePaused();
   log.detail(`✓ Selected: ${subject.text}`);
   await delay(1000);
 
@@ -1363,8 +1419,10 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
     return false;
   }
 
+  await waitWhilePaused();
   await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
-  await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
+  await waitWhilePaused();
+  await waitWhilePaused(); await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
   log.detail(`✓ Selected: ${teacher.text}`);
   await delay(1000);
 
@@ -1383,13 +1441,16 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
   }
 
   // ✅ Only reach here if NO duplicate detected
+  await waitWhilePaused();
   log.success("✓ Proceeding with submission", 2);
 
   await page.evaluate(() => window.scrollBy({ top: 400, behavior: 'smooth' }));
   await delay(800);
+  await waitWhilePaused();
 
   // Fill questions
   const fillResult = await fillAllQuestions(page, feedbackOption);
+  await waitWhilePaused();
 
   if (fillResult.total === 0) {
     log.warning("⚠️ No questions found", 2);
@@ -1426,7 +1487,10 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
 
 // ============= FIXED LAB FEEDBACK =============
 async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption) {
-  page = getCurrentSession().activePage || page;
+  const session = getCurrentSession();
+  page = session.activePage || page;
+  if (session) session.activePage = page;
+  await page.bringToFront();
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
@@ -1437,7 +1501,9 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
 
   try {
     await navigateToPage(page, 'lab');
+    await waitWhilePaused();
     await page.waitForSelector('#ContentPlaceHolder1_ddlSubject', { visible: true, timeout: 5000 });
+    await waitWhilePaused();
 
     const subject = await findSubjectOption(page, '#ContentPlaceHolder1_ddlSubject', subjectCode);
     if (!subject) {
@@ -1447,8 +1513,10 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
       return false;
     }
 
+    await waitWhilePaused();
     await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
-    await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
+    await waitWhilePaused();
+    await waitWhilePaused(); await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
     log.detail(`✓ Selected: ${subject.text}`);
     await delay(1000);
 
@@ -1473,8 +1541,10 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
       return false;
     }
 
+    await waitWhilePaused();
     await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
-    await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
+    await waitWhilePaused();
+    await waitWhilePaused(); await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
     log.detail(`✓ Selected: ${teacher.text}`);
     await delay(1000);
 
@@ -1535,7 +1605,10 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
 
 // ============= FIXED MENTOR FEEDBACK =============
 async function submitMentorFeedback(page, dept, name, feedbackOption) {
-  page = getCurrentSession().activePage || page;
+  const session = getCurrentSession();
+  page = session.activePage || page;
+  if (session) session.activePage = page;
+  await page.bringToFront();
   throwIfRunAborted();
   if (!dept || !name) {
     log.skip('Skipping Mentor - Missing data');
@@ -1546,7 +1619,9 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
 
   try {
     await navigateToPage(page, 'mentor');
+    await waitWhilePaused();
     await page.waitForSelector('#ContentPlaceHolder1_ddldept', { visible: true, timeout: 5000 });
+    await waitWhilePaused();
 
     log.action("Selecting mentor...", 2);
 
@@ -1561,15 +1636,18 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
       }));
     }, '#ContentPlaceHolder1_ddldept');
 
+    await waitWhilePaused();
     const deptMatch = await smartMatchDropdown(page, '#ContentPlaceHolder1_ddldept', dept, "DEPARTMENT");
-    await page.select("#ContentPlaceHolder1_ddldept", deptMatch.value);
+    await waitWhilePaused();
+    await waitWhilePaused(); await page.select("#ContentPlaceHolder1_ddldept", deptMatch.value);
+    await waitWhilePaused();
     log.detail(`✓ Selected: ${deptMatch.text}`);
     await delay(1500);
 
-    await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
+    await waitWhilePaused();
     const mentorMatch = await smartMatchDropdown(page, '#ContentPlaceHolder1_ddlTeacherCode', name, "MENTOR");
-
-    await page.select("#ContentPlaceHolder1_ddlTeacherCode", mentorMatch.value);
+    await waitWhilePaused();
+    await waitWhilePaused(); await page.select("#ContentPlaceHolder1_ddlTeacherCode", mentorMatch.value);
     log.detail(`✓ Selected: ${mentorMatch.text}`);
     await delay(1000);
 
@@ -1628,7 +1706,10 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
 
 // ============= FIXED TEACHING FEEDBACK =============
 async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOption) {
-  page = getCurrentSession().activePage || page;
+  const session = getCurrentSession();
+  page = session.activePage || page;
+  if (session) session.activePage = page;
+  await page.bringToFront();
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
@@ -1639,7 +1720,9 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
 
   try {
     await navigateToPage(page, 'teaching');
+    await waitWhilePaused();
     await page.waitForSelector('#ContentPlaceHolder1_ddlSubject', { visible: true, timeout: 5000 });
+    await waitWhilePaused();
 
     const subject = await findSubjectOption(page, '#ContentPlaceHolder1_ddlSubject', subjectCode);
     if (!subject) {
@@ -1649,8 +1732,10 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
       return false;
     }
 
+    await waitWhilePaused();
     await scrollToElement(page, '#ContentPlaceHolder1_ddlSubject');
-    await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
+    await waitWhilePaused();
+    await waitWhilePaused(); await page.select("#ContentPlaceHolder1_ddlSubject", subject.value);
     log.detail(`✓ Selected: ${subject.text}`);
     await delay(1000);
 
@@ -1675,8 +1760,10 @@ async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOp
       return false;
     }
 
+    await waitWhilePaused();
     await scrollToElement(page, '#ContentPlaceHolder1_ddlTeacherCode');
-    await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
+    await waitWhilePaused();
+    await waitWhilePaused(); await page.select("#ContentPlaceHolder1_ddlTeacherCode", teacher.value);
     log.detail(`✓ Selected: ${teacher.text}`);
     await delay(1000);
 
@@ -1818,6 +1905,9 @@ async function run(inputConfig = {}, ip = 'local') {
     if (!nextPage || nextPage.isClosed()) return;
     sessionContext.run(ip, () => {
       activePage = nextPage;
+      const session = getCurrentSession();
+      if (session) session.activePage = nextPage;
+      
       handleNetworkErrors(nextPage);
       if (reason) {
         log.info(`[TAB SWITCH] ${reason}`);
@@ -1860,7 +1950,9 @@ async function run(inputConfig = {}, ip = 'local') {
         if (!session || !session.sseClients.length) return;
         throwIfRunAborted();
         
-        const capturePage = activePage || page;
+        // Prioritize session-level activePage first, then local activePage, then base page
+        const capturePage = session.activePage || activePage || page;
+        
         if (browser.isConnected() && capturePage && !capturePage.isClosed()) {
           isCapturingFrame = true;
           const screenshotData = await capturePage.screenshot({ 
@@ -2037,6 +2129,7 @@ async function run(inputConfig = {}, ip = 'local') {
 
     let index = 0;
     for (const item of theoryList) {
+      await waitWhilePaused();
       throwIfRunAborted();
       index++;
       const { subject: subjectCode, teacher: teacherName } = item;
@@ -2070,6 +2163,7 @@ async function run(inputConfig = {}, ip = 'local') {
 
     let index = 0;
     for (const item of labList) {
+      await waitWhilePaused();
       throwIfRunAborted();
       index++;
       const { subject: subjectCode, teacher: teacherName } = item;
@@ -2099,6 +2193,7 @@ async function run(inputConfig = {}, ip = 'local') {
   // ============= MENTOR FEEDBACK =============
   broadcast(ip, { type: 'status_update', msg: 'PHASE: Mentor Feedback' });
   if (mentorDept || mentorName) {
+    await waitWhilePaused();
     log.section("MENTOR FEEDBACK SUBMISSION");
     log.info(`Dept: ${mentorDept || 'NOT PROVIDED'}, Name: ${mentorName || 'NOT PROVIDED'}`);
     broadcast(ip, { type: 'status_update', msg: `Mentor: ${mentorName || 'N/A'} (${mentorDept || 'N/A'})` });
@@ -2128,6 +2223,7 @@ async function run(inputConfig = {}, ip = 'local') {
 
     let index = 0;
     for (const item of teachingList) {
+      await waitWhilePaused();
       throwIfRunAborted();
       index++;
       const { subject: subjectCode, teacher: teacherName } = item;

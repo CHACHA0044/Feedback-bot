@@ -15,6 +15,18 @@
   }
 }
 
+@media (min-width: 1800px) {
+  :global(:root) {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 2100px) {
+  :global(:root) {
+    font-size: 12px;
+  }
+}
+
 .wideContainer {
   max-width: 1600px;
 }
@@ -309,7 +321,8 @@
 
 .logStream {
   background: #000;
-  border: 1px solid var(--border);
+  border: 1px solid var(--primary);
+  box-shadow: 0 0 20px rgba(240, 195, 60, 0.1);
   border-radius: 12px;
   padding: 1.5rem;
   height: 497px;
@@ -323,6 +336,8 @@
   scroll-behavior: smooth;
   position: relative;
   box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.9);
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary) transparent;
 }
 
 @media (max-width: 600px) {
@@ -391,14 +406,14 @@
 .browserView {
   height: 528px;
   background: #111;
-  border: 1px solid var(--border);
+  border: 1px solid var(--primary);
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(0, 243, 255, 0.05);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(240, 195, 60, 0.15);
   cursor: none !important;
 }
 
@@ -726,6 +741,28 @@
   text-transform: uppercase;
   white-space: nowrap;
   margin-right: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.spinningGear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem; /* Increased size significantly for mission control feel */
+  animation: gearRotation 8s linear infinite; /* Slower, more deliberate rotation */
+  transform-origin: 50% 50%;
+  line-height: 1;
+  width: 2rem;
+  height: 2rem;
+  vertical-align: middle;
+  text-align: center;
+}
+
+@keyframes gearRotation {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .commandDeckRow {
@@ -1322,11 +1359,13 @@
   background: rgba(10, 10, 10, 0.95);
   border: 1px solid var(--primary);
   border-radius: 12px;
-  padding: 2rem;
-  height: 100%;
+  padding: 1.2rem 1.5rem; /* Reduced padding */
+  height: auto; /* Allow auto height */
+  max-width: 500px; /* Limit width */
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   position: relative;
   overflow: hidden;
   box-shadow: 0 0 30px var(--primary-glow);
@@ -1335,14 +1374,14 @@
 .summaryHeader {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.8rem;
   font-family: var(--font-robotic);
-  font-size: 1.1rem;
+  font-size: 0.9rem; /* Slightly smaller font */
   color: var(--primary);
-  letter-spacing: 3px;
-  margin-bottom: 2.5rem;
+  letter-spacing: 2px;
+  margin-bottom: 1.5rem; /* Reduced margin */
   border-bottom: 1px solid rgba(240, 195, 60, 0.2);
-  padding-bottom: 1rem;
+  padding-bottom: 0.75rem;
 }
 
 .summaryPulse {
@@ -1381,15 +1420,15 @@
 
 .summaryValue {
   font-family: var(--font-robotic);
-  font-size: 2.2rem;
+  font-size: 1.6rem; /* Reduced from 2.2rem */
   color: #fff;
 }
 
 .summaryDuration {
-  margin-bottom: 3rem;
-  padding: 1.5rem;
+  margin-bottom: 2rem; /* Reduced from 3rem */
+  padding: 1rem; /* Reduced from 1.5rem */
   background: rgba(255, 255, 255, 0.03);
-  border: 1px dashed rgba(240, 195, 60, 0.3);
+  border: 1px solid var(--primary); /* Gold border */; box-shadow: 0 0 20px rgba(240, 195, 60, 0.1);
   border-radius: 8px;
   text-align: center;
 }
@@ -1403,9 +1442,8 @@
 
 .durationValue {
   font-family: var(--font-robotic);
-  font-size: 1.4rem;
+  font-size: 1.6rem; /* Reduced for better fit */
   color: var(--primary);
-  letter-spacing: 2px;
 }
 
 .summaryActions {

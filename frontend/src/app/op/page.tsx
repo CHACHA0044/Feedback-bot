@@ -98,7 +98,7 @@ export default function OpPage() {
   const crosshairRef = useRef<HTMLDivElement>(null);
   const [isHoveringBrowser, setIsHoveringBrowser] = useState(false);
   const [requestEmail, setRequestEmail] = useState('');
-  const [sessionId] = useState(() => `sess-${Math.random().toString(36).substr(2, 9)}`);
+  const [sessionId, setSessionId] = useState(() => `sess-${Math.random().toString(36).substr(2, 9)}`);
   const [isSendingPreset, setIsSendingPreset] = useState(false);
   const [summary, setSummary] = useState<{
     success: number;
@@ -112,6 +112,7 @@ export default function OpPage() {
     skippedItems?: { category: string; subject?: string; reason: string; }[];
     duplicateItems?: string[];
   } | null>(null);
+  const [showReportButton, setShowReportButton] = useState(false);
 
   const showNotif = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
     setStatusNotif({ msg, type });
@@ -230,12 +231,35 @@ export default function OpPage() {
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
     let finalMsg = stripEmoji(msg);
+    
+    // Filtering logic
+    const lowerMsg = finalMsg.toLowerCase();
+    if (
+      lowerMsg.includes('enrollment field:') ||
+      lowerMsg.includes('password field:') ||
+      lowerMsg.includes('remote_click: computed matrix coords') ||
+      lowerMsg.includes('page warning ignored: $(...).modal is not a function') ||
+      lowerMsg.includes('page warning ignored: $(...).modal') || 
+      /^(theory|lab|mentor|teaching)\s+\d+\/\d+.+$/i.test(finalMsg.trim())
+    ) {
+      return;
+    }
+
     if (finalMsg.includes('Entering credentials...')) {
       finalMsg = 'Starting Task...';
     }
+    
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    const displayMinutes = minutes < 10 ? `0${minutes}` : minutes;
+    const timeStr = `${displayHours}.${displayMinutes} ${ampm}`;
+
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }),
+      time: timeStr,
       msg: finalMsg,
       type
     };
@@ -248,7 +272,8 @@ export default function OpPage() {
 
   useEffect(() => {
     if (!logContainerRef.current || !shouldAutoFollowRef.current) return;
-    logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    const node = logContainerRef.current;
+    node.scrollTop = node.scrollHeight;
   }, [logs]);
 
   const persistRunState = useCallback((reason: string) => {
@@ -356,10 +381,11 @@ export default function OpPage() {
     }
   }, []);
 
-  const connectStream = useCallback(() => {
+  const connectStream = useCallback((idOverride?: string) => {
     closeStream();
+    const targetSessionId = idOverride || sessionId;
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    const eventSource = new EventSource(`${backendUrl}/api/stream?sessionId=${sessionId}`);
+    const eventSource = new EventSource(`${backendUrl}/api/stream?sessionId=${targetSessionId}`);
     streamRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
@@ -388,16 +414,18 @@ export default function OpPage() {
 
         if (data.msg === 'MISSION_ACCOMPLISHED') {
           setSummary(prev => prev); // keep existing summary from run_complete_summary
-          setStep('done');
-          setCrtState('off');
-          clearRunState('completed');
-          closeStream();
+          setShowReportButton(true);
+          addLog("MISSION_STATUS: Objective complete. System awaiting report retrieval.", "success");
         }
         if (data.msg === 'PROCESS_COMPLETE') {
-          setStep('form');
-          setCrtState('off');
-          clearRunState('logged out');
-          closeStream();
+          // Only return to form if we aren't currently executing or finished with mission
+          // (prevents the "blip" when the report transition is in progress)
+          if (step === 'form' || (!showReportButton && step !== 'executing')) {
+            setStep('form');
+            setCrtState('off');
+            clearRunState('logged out');
+            closeStream();
+          }
         }
         if (data.msg === 'PROTOCOL_PAUSED') {
           setIsPaused(true);
@@ -410,7 +438,12 @@ export default function OpPage() {
           setIsPaused(false);
           setCurrentStatus('PROCESS_TERMINATED');
           setCrtState('off');
-          clearRunState('terminated');
+          // Wait for CRT off animation before returning to form
+          setTimeout(() => {
+            setStep('form');
+            clearRunState('terminated');
+            closeStream();
+          }, 1500);
         }
       }
     };
@@ -486,10 +519,17 @@ export default function OpPage() {
   }, [isPageLoaded, crtState]);
 
   const startExecution = async () => {
+    const freshSessionId = `sess-${Math.random().toString(36).substr(2, 9)}`;
+    setSessionId(freshSessionId);
+    setShowReportButton(false);
+    setSummary(null);
+    setLogs([]);
+    
     addLog("System initialized. Establishing Uplink...", "action");
 
     await delay(500);
     addLog("Connecting to Mission Control stream...", "action");
+    connectStream(freshSessionId);
     persistRunState('run started');
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
@@ -505,7 +545,7 @@ export default function OpPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-session-id': sessionId
+          'x-session-id': freshSessionId
         },
         body: JSON.stringify(executionPayload),
       });
@@ -540,6 +580,7 @@ export default function OpPage() {
         body: JSON.stringify({ captcha: captchaSolution })
       });
       setIsCaptchaRequired(false);
+      setIsZoomed(false);
       setCaptchaSolution("");
       addLog("User signal received. Solution transmitted to Matrix.", "success");
     } catch (err) {
@@ -775,8 +816,9 @@ export default function OpPage() {
   const handleLogScroll = () => {
     if (!logContainerRef.current) return;
     const node = logContainerRef.current;
+    // Increased threshold to 50px for better sensitivity
     const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-    shouldAutoFollowRef.current = distanceFromBottom < 32;
+    shouldAutoFollowRef.current = distanceFromBottom < 50;
   };
 
   if (step === 'done') {
@@ -784,7 +826,7 @@ export default function OpPage() {
       <div className={styles.container}>
         <div className={styles.doneState}>
           <div className={`${styles.doneTitle} animate-float`} style={{ color: 'var(--primary)', textShadow: '0 0 30px var(--primary-glow)' }}>
-            MISSION COMPLETE
+            EXECUTION COMPLETE
           </div>
           <p className={styles.subtitle}>All feedback protocols executed. Review the report below.</p>
 
@@ -792,7 +834,8 @@ export default function OpPage() {
             <div className={styles.summaryCard} style={{ marginTop: '2rem', maxWidth: '640px', margin: '2rem auto 0' }}>
               <div className={styles.summaryHeader}>
                 <div className={styles.summaryPulse} />
-                <span>EXECUTION REPORT</span>
+                <span>MISSION REPORT</span>
+                <p>December 16, 1991</p>
               </div>
 
               <div className={styles.summaryGrid}>
@@ -895,37 +938,7 @@ export default function OpPage() {
 
       {step === 'form' ? (
         <form className={`${styles.form} ${isGlobalSyncPulse ? styles.globalSyncPulse : ''}`} onSubmit={handleSubmit}>
-          {/* Section 01: Uplink Credentials (PRIVATE MODE) */}
-          {/* <div className={`${styles.section} glass`}>
-            <h2 className={styles.sectionTitle}>Section 01 - Uplink Credentials</h2>
-            <div className={styles.grid}>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Student ID</label>
-                <input 
-                  type="text" 
-                  name="studentId" 
-                  required 
-                  className={styles.input} 
-                  placeholder="ID Number"
-                  value={formData.studentId}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Gateway Password</label>
-                <input 
-                  type="password" 
-                  name="password" 
-                  required 
-                  className={styles.input} 
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
-          </div> */}
-
+         
           {/* Section 1.5: Presets */}
           <div className={`${styles.section} ${styles.sectionVisible} glass`}>
             <div className={styles.sectionTitle}>
@@ -980,7 +993,7 @@ export default function OpPage() {
                   title="Request Custom Preset"
                 >
                   <span className={styles.desktopMail}>🖂</span>
-                  <span className={styles.mobileMail}>📧</span>
+                  <span className={styles.mobileMail}>📩</span>
                 </button>
               </div>
             </motion.div>
@@ -1033,11 +1046,38 @@ export default function OpPage() {
               </div>
             </motion.div>
           </div>
-
-          {/* Section 3: Theory */}
+          {/* Section 3: Feedback format */}
           <div className={`${styles.section} glass`}>
             <div className={styles.sectionTitle}>
-              <span>Section 03 - Theory Matrix</span>
+              <span>Section 03 - Feedback Format</span>
+            </div>
+            <div className={styles.modalBody}>
+                    <div className={styles.formatGuide}>
+                      <strong>Directive:</strong><br/>
+                      In each section you can add multiple subjects and teachers separated by commas.<br/>
+                      Ensure correct spelling, correct subject code, synced to the correct techer.<br />
+                      In lab n teaching quality u hav to mention same subject code twice with different teachers.<br /><br />
+                      
+                      # Theory Matrix<br/>
+                      THEORY_SUBJECTS=CG302,CS305,CS313,CS315,CS348,CS394,EC339<br/>
+                      THEORY_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Akhlaque Ahmad Khan<br/><br/>
+                      # Lab Modules<br/>
+                      LAB_SUBJECTS=CS306,CS314,CS396<br/>
+                      LAB_TEACHERS=Falak Alam,Naziya Anjum,Mr. Sunil Singh<br/><br/>
+                      # Mentor Directive<br/>
+                      MENTOR_DEPT=Computer Science<br/>
+                      MENTOR_NAME=Nida Khan<br/><br/>
+                      # Learning Protocols<br/>
+                      TEACHING_SUBJECTS=CG302,CS305,CS303,CS306,CS313,CS315,CS348,CS394,CS396,EC339<br/>
+                      TEACHING_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan<br/><br/>
+                    </div>
+                  </div>
+          </div>
+                
+          {/* Section 4: Theory */}
+          <div className={`${styles.section} glass`}>
+            <div className={styles.sectionTitle}>
+              <span>Section 04 - Theory Matrix</span>
             </div>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
@@ -1065,10 +1105,10 @@ export default function OpPage() {
             </div>
           </div>
 
-          {/* Section 4: Lab */}
+          {/* Section 5: Lab */}
           <div className={`${styles.section} glass`}>
             <div className={styles.sectionTitle}>
-              <span>Section 04 - Lab Modules</span>
+              <span>Section 05 - Lab Modules</span>
             </div>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
@@ -1096,10 +1136,10 @@ export default function OpPage() {
             </div>
           </div>
 
-          {/* Section 5: Mentor */}
+          {/* Section 6: Mentor */}
           <div className={`${styles.section} glass`}>
             <div className={styles.sectionTitle}>
-              <span>Section 05 - Mentor Directive</span>
+              <span>Section 06 - Mentor Directive</span>
             </div>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
@@ -1127,10 +1167,10 @@ export default function OpPage() {
             </div>
           </div>
 
-          {/* Section 6: Teaching & Learning */}
+          {/* Section 7: Teaching & Learning */}
           <div className={`${styles.section} glass`}>
             <div className={styles.sectionTitle}>
-              <span>Section 06 - Learning Protocols</span>
+              <span>Section 07 - Learning Protocols</span>
             </div>
             <div className={styles.grid}>
               <div className={styles.inputGroup}>
@@ -1263,7 +1303,7 @@ export default function OpPage() {
                       className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
                       onClick={confirmKill}
                     >
-                      ⏹ CONFIRM TERMINATE
+                      ⏹ TERMINATE
                     </button>
                     <button
                       className={styles.commandDeckButton}
@@ -1290,7 +1330,7 @@ export default function OpPage() {
                   overflow: 'hidden',
                   textOverflow: 'ellipsis'
                 }}>
-                  📡 MISSION_STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : (STATUS_MAP[currentStatus] || currentStatus))}
+                  📡 STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : (STATUS_MAP[currentStatus] || currentStatus))}
                 </div>
               </div>
 
@@ -1358,16 +1398,6 @@ export default function OpPage() {
                 )}
               </div>
 
-              {runProgressState && runProgressState.phase !== 'Idle' && !isKilled && (
-                <div className={`${styles.progressWrapper} glass`}>
-                  <div className={styles.progressMeta}>
-                    <span>{runProgressState.phase}</span>
-                    <span>{runProgressState.index > 0 ? `${runProgressState.index}/${runProgressState.total}` : 'Awaiting item'}</span>
-                    <span>{runProgressState.subject || 'No subject selected'}</span>
-                  </div>
-                </div>
-              )}
-
               {/* Hidden input bridge for mobile keyboard support */}
               <input
                 ref={mobileInputRef}
@@ -1393,85 +1423,32 @@ export default function OpPage() {
             </div>
 
             <div className={styles.controlSection}>
-              {summary ? (
-                <motion.div 
-                  className={styles.summaryCard}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                >
-                  <div className={styles.summaryHeader}>
-                    <div className={styles.summaryPulse} />
-                    <span>MISSION_COMPLETE_REPORT</span>
-                  </div>
-                  
-                  <div className={styles.summaryGrid}>
-                    <div className={styles.summaryItem}>
-                      <span className={styles.summaryLabel}>SUCCESS_RATE</span>
-                      <span className={styles.summaryValue} style={{ color: '#00ff00' }}>{summary.success}</span>
-                    </div>
-                    <div className={styles.summaryItem}>
-                      <span className={styles.summaryLabel}>ERRORS_LOGGED</span>
-                      <span className={styles.summaryValue} style={{ color: '#ff4b4b' }}>{summary.errors}</span>
-                    </div>
-                    <div className={styles.summaryItem}>
-                      <span className={styles.summaryLabel}>SKIPPED_ITEMS</span>
-                      <span className={styles.summaryValue}>{summary.skipped}</span>
-                    </div>
-                    <div className={styles.summaryItem}>
-                      <span className={styles.summaryLabel}>DUPLICATES</span>
-                      <span className={styles.summaryValue} style={{ color: 'var(--primary)' }}>{summary.duplicates}</span>
-                    </div>
-                  </div>
+              <div className={styles.logStream} ref={logContainerRef} onScroll={handleLogScroll}>
+                {logs.map(log => {
+                  const toLow = log.msg.toLowerCase();
+                  const isGold = toLow.includes('completed') || 
+                                 toLow.includes('starting task') ||
+                                 toLow.includes('%') || 
+                                 toLow.includes('feedback') || 
+                                 toLow.includes('mentor') || 
+                                 toLow.includes('subject') ||
+                                 toLow.includes('submitted') ||
+                                 toLow.includes('submission');
 
-                  <div className={styles.summaryDuration}>
-                    <div className={styles.durationLabel}>TOTAL_EXECUTION_TIME</div>
-                    <div className={styles.durationValue}>{summary.duration}</div>
-                  </div>
-
-              <div className={styles.summaryActions}>
-                  <button
-                    onClick={handleLogout}
-                    className={styles.summaryBtnPrimary}
-                  >
-                    LOGOUT &amp; EXIT
-                  </button>
-                  <button
-                    onClick={() => { setStep('form'); setSummary(null); setLogs([]); }}
-                    className={styles.summaryBtnSecondary}
-                  >
-                    NEW RUN
-                  </button>
-                </div>
-              </motion.div>
-              ) : (
-                <>
-                  <div className={styles.logStream} ref={logContainerRef} onScroll={handleLogScroll}>
-                    {logs.map(log => {
-                      const toLow = log.msg.toLowerCase();
-                      const isGold = toLow.includes('completed') || 
-                                     toLow.includes('starting task') ||
-                                     toLow.includes('%') || 
-                                     toLow.includes('feedback') || 
-                                     toLow.includes('mentor') || 
-                                     toLow.includes('subject') ||
-                                     toLow.includes('submitted') ||
-                                     toLow.includes('submission');
-
-                      return (
-                        <div key={log.id} className={styles.logEntry}>
-                          <span className={styles.logTime}>[{log.time}]</span>
-                          <span
-                            className={`${styles.logMsg} ${styles[log.type]}`}
-                            style={isGold && log.type !== 'error' ? { color: '#f0c33c', fontWeight: 'bold' } : {}}
-                          >
-                            {log.msg}
-                          </span>
-                        </div>
-                      );
-                    })}
-                    <div ref={logEndRef} />
-                  </div>
+                  return (
+                    <div key={log.id} className={styles.logEntry}>
+                      <span className={styles.logTime}>[{log.time}]</span>
+                      <span
+                        className={`${styles.logMsg} ${styles[log.type]}`}
+                        style={isGold && log.type !== 'error' ? { color: '#f0c33c', fontWeight: 'bold' } : {}}
+                      >
+                        {log.msg}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div ref={logEndRef} />
+              </div>
 
                   {!isKilled && (
                     <motion.div
@@ -1479,31 +1456,79 @@ export default function OpPage() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                     >
-                      <div className={styles.commandDeckTitle}>⚙ COMMAND DECK</div>
+                      <div className={styles.commandDeckTitle}><span className={styles.spinningGear}>⚙</span> COMMAND DECK</div>
                       <div className={styles.commandDeckRow}>
                         {isCaptchaRequired && (
                           <button
                             onClick={handleCaptchaSolved}
                             className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
-                            style={{ borderStyle: 'dashed', background: 'rgba(200, 163, 44, 0.15)' }}
+                            style={{ background: 'rgba(200, 163, 44, 0.15)' }}
                           >
                             ▶ Continue Protocol
                           </button>
                         )}
-                        {isPaused ? (
+                        {showReportButton ? (
                           <button
-                            onClick={ensureResumed}
-                            className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                            onClick={async () => {
+                              addLog("Commencing final synchronization...", "action");
+                              
+                              // Signal backend to close browser/tabs
+                              const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+                              try {
+                                await fetch(`${backendUrl}/api/logout`, {
+                                  method: 'POST',
+                                  headers: { 'x-session-id': sessionId }
+                                });
+                                addLog("Remote viewport severed successfully.", "success");
+                              } catch (e) {
+                                addLog("Warning: Could not terminate remote session gracefully.", "error");
+                              }
+
+                              addLog("Initiating CRT shutdown sequence...", "action");
+                              addLog("MISSION_STATUS: Objective complete. System standing down.", "success");
+                              
+                              // Step 1: Fade out UI elements inside CRT
+                              setCrtState('off');
+                              
+                              // Step 2: Allow animation to breathe
+                              await delay(2800);
+                              
+                              // Step 3: Final state transition
+                              setStep('done');
+                              clearRunState('completed');
+                              closeStream();
+                            }}
+                            className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive} animate-pulse`}
+                            style={{ 
+                              background: 'rgba(0, 255, 0, 0.1)', 
+                              borderColor: '#00ff00', 
+                              color: '#00ff00',
+                              padding: '0.6rem 2rem',
+                              fontSize: '0.5rem'
+                            }}
                           >
-                            ▶ Resume Protocol
+                             ~ REPORT
                           </button>
                         ) : (
-                          <button
-                            onClick={ensurePaused}
-                            className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
-                          >
-                            ⏸ Pause Protocol
-                          </button>
+                          <>
+                            {!isCaptchaRequired && (
+                              isPaused ? (
+                                <button
+                                  onClick={ensureResumed}
+                                  className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                                >
+                                  ▶ Resume Protocol
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={ensurePaused}
+                                  className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                                >
+                                  ⏸ Pause Protocol
+                                </button>
+                              )
+                            )}
+                          </>
                         )}
                         <button
                           onClick={handleKill}
@@ -1511,11 +1536,11 @@ export default function OpPage() {
                         >
                           ⏹ Kill Task
                         </button>
+                        
                       </div>
                     </motion.div>
                   )}
-                </>
-              )}
+
             </div>
           </div>
 
