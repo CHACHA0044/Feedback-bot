@@ -219,9 +219,7 @@ export default function OpPage() {
       .catch(() => undefined);
   }, []);
 
-  const handleBufferedType = useCallback((char: string) => {
-    void handleType(char);
-  }, [handleType]);
+
 
   const stripEmoji = (text: string): string => {
     return text
@@ -632,6 +630,10 @@ export default function OpPage() {
       body: JSON.stringify({ action: "type", text }),
     }).catch(() => undefined);
   }, [sessionId]);
+
+  const handleBufferedType = useCallback((char: string) => {
+    void handleType(char);
+  }, [handleType]);
 
   useEffect(() => {
     if (step !== 'executing') return;
