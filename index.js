@@ -386,8 +386,8 @@ function parseConfiguration(config = {}) {
   // When frontend provides config, it is AUTHORITATIVE — no .env fallback
   const enrollmentNo = config.studentId || config.ENROLLMENT_NO || envEnrollment;
   const password = config.password || config.PASSWORD || envPassword;
-  const feedbackOptionRaw = config.feedbackOption ?? config.FEEDBACK_OPTION ?? envFeedback;
-  const feedbackOption = typeof feedbackOptionRaw === 'string' ? feedbackOptionRaw.trim() : feedbackOptionRaw;
+  const feedbackOptionRaw = config.feedbackOption ?? config.FEEDBACK_OPTION ?? envFeedback ?? 'Always';
+  const feedbackOption = (typeof feedbackOptionRaw === 'string' && feedbackOptionRaw.trim()) ? feedbackOptionRaw.trim() : 'Always';
 
   const mentorDept = config.mentorDept || config.MENTOR_DEPT || (hasConfig ? null : envMentorDept);
   const mentorName = config.mentorName || config.MENTOR_NAME || (hasConfig ? null : envMentorName);
@@ -2233,7 +2233,7 @@ async function run(inputConfig = {}, ip = 'local') {
 
 // ============= WEB SERVER ENDPOINTS =============
 app.post("/api/resume", (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   sessionContext.run(ip, () => {
     const session = getCurrentSession();
     if (session?.resumeResolve) {
@@ -2248,7 +2248,7 @@ app.post("/api/resume", (req, res) => {
 });
 
 app.post("/api/interact", async (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   const { action, x, y, key, text } = req.body;
   
   await sessionContext.run(ip, async () => {
@@ -2279,7 +2279,7 @@ app.post("/api/interact", async (req, res) => {
 });
 
 app.post("/api/pause", (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   sessionContext.run(ip, () => {
     const session = getCurrentSession();
     if (!session?.stats?.startTime) {
@@ -2293,7 +2293,7 @@ app.post("/api/pause", (req, res) => {
 });
 
 app.post("/api/resume-protocol", (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   sessionContext.run(ip, () => {
     const session = getCurrentSession();
     if (!session?.stats?.startTime) {
@@ -2307,7 +2307,7 @@ app.post("/api/resume-protocol", (req, res) => {
 });
 
 app.post("/api/kill", async (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   await sessionContext.run(ip, async () => {
     const session = getCurrentSession();
     log.section("🛑 EMERGENCY KILL COMMAND RECEIVED");
@@ -2328,7 +2328,7 @@ app.post("/api/kill", async (req, res) => {
 });
 
 app.post("/api/request-preset", async (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   const { email, message, configData } = req.body;
   
   await sessionContext.run(ip, async () => {
@@ -2350,7 +2350,7 @@ app.post("/api/request-preset", async (req, res) => {
 });
 
 app.get("/api/stream", (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -2395,7 +2395,7 @@ app.post("/api/logout", async (req, res) => {
 });
 
 app.post("/api/execute", async (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'local';
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
   
   await sessionContext.run(ip, async () => {
     log.section("API EXECUTION TRIGGERED");
