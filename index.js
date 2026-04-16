@@ -16,7 +16,7 @@ app.use(cors({
   methods: ['GET', 'POST'],
   credentials: true
 }));
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 7860;
 
 app.get("/", (req, res) => {
   res.send(`

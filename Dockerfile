@@ -27,10 +27,10 @@ COPY . .
 # Set environment variables for Puppeteer
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
-    PORT=3000
+    PORT=7860
 
 # Expose the application port
-EXPOSE 3000
+EXPOSE 7860
 
 # Command to start the application
 CMD ["node", "index.js"]
