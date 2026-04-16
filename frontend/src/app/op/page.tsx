@@ -12,9 +12,9 @@ const PRESETS = {
     labCodes: "CS306,CS306,CS314,CS396",
     labTeachers: "Falak Alam,Mohammad Aman,Naziya Anjum,Mr. Sunil Singh",
     mentorDept: "Computer Science",
-    mentorName: "Nida Khan",
-    teachingCodes: "CG302,CS305,CS306,CS313,CS315,CS348,CS394,CS396,EC339",
-    teachingTeachers: "Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan",
+    mentorName: "Tabassum",
+    teachingCodes: "CG302,CS305,CS306,CS306,CS313,CS314,CS315,CS348,CS394,CS396,EC339",
+    teachingTeachers: "Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Mohammad Aman,Naziya Anjum,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan",
     feedbackOption: "Always"
   }
 };
@@ -37,6 +37,21 @@ interface RunProgress {
   teacher: string;
   remaining: number;
 }
+
+const STATUS_MAP: Record<string, string> = {
+  'MISSION_START': 'BOOTING_SYSTEM',
+  'LOGIN_PHASE': 'UPLINKING_CREDENTIALS',
+  'Awaiting Manual Login': 'AWAITING_USER_SYNC',
+  'DASHBOARD_REACHED': 'ANALYZING_DASHBOARD',
+  'STARTING_FEEDBACK': 'INITIATING_FEEDBACK_PROTOCOLS',
+  'SUBMITTING_THEORY': 'UPDATING_THEORY_MATRIX',
+  'SUBMITTING_LAB': 'UPDATING_LAB_MODULES',
+  'SUBMITTING_MENTOR': 'TRANSMITTING_MENTOR_DIRECTIVE',
+  'SUBMITTING_TEACHING': 'UPDATING_LEARNING_PROTOCOLS',
+  'PROCESS_TERMINATED': 'CONNECTION_SEVERED',
+  'MISSION_ACCOMPLISHED': 'OBJECTIVE_COMPLETE',
+  'SYSTEM_IDLE': 'AWAITING_COMMAND'
+};
 
 export default function OpPage() {
   // Hydration-safe state initialization
@@ -90,6 +105,11 @@ export default function OpPage() {
     skipped: number;
     duplicates: number;
     duration: string;
+    startTime?: string;
+    endTime?: string;
+    breakdown?: { theory: number; lab: number; mentor: number; teaching: number; };
+    skippedItems?: { category: string; subject?: string; reason: string; }[];
+    duplicateItems?: string[];
   } | null>(null);
 
   const showNotif = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
@@ -219,8 +239,15 @@ export default function OpPage() {
     typeTimeoutRef.current = setTimeout(flushTypeBuffer, 15);
   }, [flushTypeBuffer]);
 
+  const stripEmoji = (text: string): string => {
+    return text
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}\u{20E3}\u{1F004}-\u{1F0CF}]/gu, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  };
+
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
-    let finalMsg = msg;
+    let finalMsg = stripEmoji(msg);
     if (finalMsg.includes('Entering credentials...')) {
       finalMsg = 'Starting Task...';
     }
@@ -378,10 +405,23 @@ export default function OpPage() {
         addLog(`UPLINK_STATUS: ${data.msg}`, "info");
 
         if (data.msg === 'MISSION_ACCOMPLISHED') {
+          setSummary(prev => prev); // keep existing summary from run_complete_summary
+          setStep('done');
           setCrtState('off');
           clearRunState('completed');
           closeStream();
-          // No longer auto-switching to 'done' step immediately, summary will show
+        }
+        if (data.msg === 'PROCESS_COMPLETE') {
+          setStep('form');
+          setCrtState('off');
+          clearRunState('logged out');
+          closeStream();
+        }
+        if (data.msg === 'PROTOCOL_PAUSED') {
+          setIsPaused(true);
+        }
+        if (data.msg === 'PROTOCOL_RESUMED') {
+          setIsPaused(false);
         }
         if (data.msg === 'PROCESS_TERMINATED' || data.msg === 'TERMINATING_ALL_PROCESSES') {
           setIsKilled(true);
@@ -465,17 +505,17 @@ export default function OpPage() {
 
   const startExecution = async () => {
     addLog("System initialized. Establishing Uplink...", "action");
-    setProgress(5);
 
-    await delay(1000);
+    await delay(500);
     addLog("Connecting to Mission Control stream...", "action");
     persistRunState('run started');
 
-    setProgress(15);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     const executionPayload = {
       ...formData,
-      feedbackOption: formData.feedbackOption || 'Always'
+      feedbackOption: formData.feedbackOption || 'Always',
+      isMobile
     };
 
     try {
@@ -491,7 +531,6 @@ export default function OpPage() {
 
       if (response.ok) {
         addLog(`Protocol initiated: ${data.message}`, "success");
-        setProgress(30);
       } else {
         addLog(`Uplink Failed: ${data.message}`, "error");
         addLog("Mission aborted. Use the button below to return to config.", "info");
@@ -648,16 +687,33 @@ export default function OpPage() {
 
   const setProtocolPaused = async (paused: boolean) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    setIsPaused(paused); // Optimistic update
     try {
       const endpoint = paused ? '/api/pause' : '/api/resume-protocol';
-      const res = await fetch(`${backendUrl}${endpoint}`, { method: 'POST' });
-      const data = await res.json();
-      setIsPaused(data.isPaused);
-      addLog(`SYSTEM: Protocol ${data.isPaused ? 'Paused' : 'Resumed'}`, "action");
-      persistRunState(data.isPaused ? 'paused' : 'resumed');
+      await fetch(`${backendUrl}${endpoint}`, { method: 'POST' });
+      addLog(`SYSTEM: Protocol ${paused ? 'Paused' : 'Resumed'}`, "action");
+      persistRunState(paused ? 'paused' : 'resumed');
     } catch (_) {
+      setIsPaused(!paused); // Rollback on failure
       console.error("Pause failed");
     }
+  };
+
+  const handleLogout = async () => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      addLog("Logging out and closing browser...", "action");
+      await fetch(`${backendUrl}/api/logout`, { method: 'POST' });
+    } catch (_) {}
+    setStep('form');
+    setLogs([]);
+    setLiveScreenshot(null);
+    setSummary(null);
+    setCurrentStatus('SYSTEM_IDLE');
+    setIsPaused(false);
+    setIsKilled(false);
+    clearRunState('logged out');
+    closeStream();
   };
 
   const ensurePaused = async () => {
@@ -712,22 +768,99 @@ export default function OpPage() {
           <div className={`${styles.doneTitle} animate-float`} style={{ color: 'var(--primary)', textShadow: '0 0 30px var(--primary-glow)' }}>
             MISSION COMPLETE
           </div>
-          <p className={styles.subtitle}>All feedback protocols have been executed successfully.</p>
-          <div className={styles.summaryActions}>
-            <button 
-              onClick={() => {
-                setStep('form');
-                setSummary(null);
-                setLogs([]);
-                setProgress(0);
-              }}
-              className="btn-primary" 
-              style={{ padding: '1.2rem 3rem' }}
-            >
-              Restart Protocol
-            </button>
-            <Link href="/" className="btn-secondary" style={{ padding: '1.2rem 3rem', marginLeft: '1rem' }}>Return to Base</Link>
-          </div>
+          <p className={styles.subtitle}>All feedback protocols executed. Review the report below.</p>
+
+          {summary && (
+            <div className={styles.summaryCard} style={{ marginTop: '2rem', maxWidth: '640px', margin: '2rem auto 0' }}>
+              <div className={styles.summaryHeader}>
+                <div className={styles.summaryPulse} />
+                <span>EXECUTION REPORT</span>
+              </div>
+
+              <div className={styles.summaryGrid}>
+                <div className={styles.summaryItem}>
+                  <span className={styles.summaryLabel}>SUBMITTED</span>
+                  <span className={styles.summaryValue} style={{ color: '#00ff00' }}>{summary.success}</span>
+                </div>
+                <div className={styles.summaryItem}>
+                  <span className={styles.summaryLabel}>FAILED</span>
+                  <span className={styles.summaryValue} style={{ color: '#ff4b4b' }}>{summary.errors}</span>
+                </div>
+                <div className={styles.summaryItem}>
+                  <span className={styles.summaryLabel}>SKIPPED</span>
+                  <span className={styles.summaryValue}>{summary.skipped}</span>
+                </div>
+                <div className={styles.summaryItem}>
+                  <span className={styles.summaryLabel}>DUPLICATES</span>
+                  <span className={styles.summaryValue} style={{ color: 'var(--primary)' }}>{summary.duplicates}</span>
+                </div>
+              </div>
+
+              <div className={styles.summaryDuration}>
+                <div className={styles.durationLabel}>EXECUTION TIME</div>
+                <div className={styles.durationValue}>{summary.duration}</div>
+              </div>
+
+              {summary.breakdown && (
+                <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(240,195,60,0.06)', borderRadius: '6px', fontSize: '0.78rem', color: '#aaa' }}>
+                  <div style={{ color: 'var(--primary)', marginBottom: '0.5rem', fontWeight: 600 }}>BREAKDOWN</div>
+                  <div>Theory: {summary.breakdown.theory} | Lab: {summary.breakdown.lab} | Mentor: {summary.breakdown.mentor} | Teaching: {summary.breakdown.teaching}</div>
+                </div>
+              )}
+
+              {summary.skippedItems && summary.skippedItems.length > 0 && (
+                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(255,75,75,0.06)', borderRadius: '6px', fontSize: '0.76rem', color: '#aaa' }}>
+                  <div style={{ color: '#ff4b4b', marginBottom: '0.4rem', fontWeight: 600 }}>SKIPPED ({summary.skippedItems.length})</div>
+                  {summary.skippedItems.slice(0, 5).map((item, i) => (
+                    <div key={i}>[{item.category}] {item.subject || 'N/A'} — {item.reason}</div>
+                  ))}
+                </div>
+              )}
+
+              {summary.duplicateItems && summary.duplicateItems.length > 0 && (
+                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(240,195,60,0.06)', borderRadius: '6px', fontSize: '0.76rem', color: '#aaa' }}>
+                  <div style={{ color: 'var(--primary)', marginBottom: '0.4rem', fontWeight: 600 }}>ALREADY SUBMITTED ({summary.duplicateItems.length})</div>
+                  {summary.duplicateItems.slice(0, 5).map((item, i) => (
+                    <div key={i}>{item}</div>
+                  ))}
+                </div>
+              )}
+
+              <div className={styles.summaryActions}>
+                <button
+                  onClick={handleLogout}
+                  className={styles.summaryBtnPrimary}
+                >
+                  LOGOUT &amp; EXIT
+                </button>
+                <button
+                  onClick={() => { setStep('form'); setSummary(null); setLogs([]); }}
+                  className={styles.summaryBtnSecondary}
+                >
+                  NEW RUN
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!summary && (
+            <div className={styles.summaryActions} style={{ marginTop: '2rem' }}>
+              <button
+                onClick={handleLogout}
+                className="btn-primary"
+                style={{ padding: '1.2rem 3rem' }}
+              >
+                Logout &amp; Exit
+              </button>
+              <button
+                onClick={() => { setStep('form'); setLogs([]); }}
+                className="btn-secondary"
+                style={{ padding: '1.2rem 3rem', marginLeft: '1rem' }}
+              >
+                New Run
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1139,7 +1272,7 @@ export default function OpPage() {
                   overflow: 'hidden',
                   textOverflow: 'ellipsis'
                 }}>
-                  📡 MISSION_STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : currentStatus)}
+                  📡 MISSION_STATUS: {isKilled ? 'TERMINATED' : (isPaused ? 'PAUSED' : (STATUS_MAP[currentStatus] || currentStatus))}
                 </div>
               </div>
 
@@ -1209,16 +1342,6 @@ export default function OpPage() {
 
               {runProgressState && runProgressState.phase !== 'Idle' && !isKilled && (
                 <div className={`${styles.progressWrapper} glass`}>
-                  <div className={styles.progressInfo}>
-                    <span>REMOTE UPLINK ESTABLISHED</span>
-                    <span>{Math.round(progress)}%</span>
-                  </div>
-                  <div className={styles.progressBar}>
-                    <div
-                      className={styles.progressFill}
-                      style={{ width: `${progress}%` }}
-                    ></div>
-                  </div>
                   <div className={styles.progressMeta}>
                     <span>{runProgressState.phase}</span>
                     <span>{runProgressState.index > 0 ? `${runProgressState.index}/${runProgressState.total}` : 'Awaiting item'}</span>
@@ -1288,23 +1411,21 @@ export default function OpPage() {
                     <div className={styles.durationValue}>{summary.duration}</div>
                   </div>
 
-                  <div className={styles.summaryActions}>
-                    <button 
-                      onClick={() => {
-                        setStep('form');
-                        setSummary(null);
-                        setLogs([]);
-                        setProgress(0);
-                      }}
-                      className={styles.summaryBtnPrimary}
-                    >
-                      CONTINUE PROTOCOL
-                    </button>
-                    <Link href="/" className={styles.summaryBtnSecondary}>
-                      BACK TO BASE
-                    </Link>
-                  </div>
-                </motion.div>
+              <div className={styles.summaryActions}>
+                  <button
+                    onClick={handleLogout}
+                    className={styles.summaryBtnPrimary}
+                  >
+                    LOGOUT &amp; EXIT
+                  </button>
+                  <button
+                    onClick={() => { setStep('form'); setSummary(null); setLogs([]); }}
+                    className={styles.summaryBtnSecondary}
+                  >
+                    NEW RUN
+                  </button>
+                </div>
+              </motion.div>
               ) : (
                 <>
                   <div className={styles.logStream} ref={logContainerRef} onScroll={handleLogScroll}>
@@ -1322,13 +1443,10 @@ export default function OpPage() {
                       return (
                         <div key={log.id} className={styles.logEntry}>
                           <span className={styles.logTime}>[{log.time}]</span>
-                          <span 
-                            className={`${styles.logMsg} ${styles[log.type]}`} 
+                          <span
+                            className={`${styles.logMsg} ${styles[log.type]}`}
                             style={isGold && log.type !== 'error' ? { color: '#f0c33c', fontWeight: 'bold' } : {}}
                           >
-                            {log.type === 'action' && '▶ '}
-                            {log.type === 'success' && '✓ '}
-                            {log.type === 'error' && '⚠ '}
                             {log.msg}
                           </span>
                         </div>
