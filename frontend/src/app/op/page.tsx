@@ -598,6 +598,9 @@ export default function OpPage() {
     setClickIndicator({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: Date.now() });
     setTimeout(() => setClickIndicator(null), 400);
 
+    // Debugging coordinates
+    addLog(`REMOTE_CLICK: Computed matrix coords (${Math.round(x_scaled)}, ${Math.round(y_scaled)})`, "info");
+
     // Mobile keyboard bridge
     if (mobileInputRef.current) {
       mobileInputRef.current.focus();
@@ -612,7 +615,11 @@ export default function OpPage() {
             'x-session-id': sessionId
           },
           body: JSON.stringify({ action: 'click', x: x_scaled, y: y_scaled })
-        }).catch(() => undefined);
+        }).then(res => {
+          if (!res.ok) addLog(`Interact Failed: status ${res.status}`, "error");
+        }).catch(err => {
+          addLog(`Interact Network Error: ${err.message}`, "error");
+        });
     } catch (err) {
       console.error("Interaction failed");
     }
