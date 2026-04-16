@@ -219,29 +219,9 @@ export default function OpPage() {
       .catch(() => undefined);
   }, []);
 
-  const flushTypeBuffer = useCallback(async () => {
-    if (!typeBufferRef.current) return;
-    const text = typeBufferRef.current;
-    typeBufferRef.current = "";
-    if (typeTimeoutRef.current) clearTimeout(typeTimeoutRef.current);
-    typeTimeoutRef.current = null;
-
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    fetch(`${backendUrl}/api/interact`, {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        "x-session-id": sessionId
-      },
-      body: JSON.stringify({ action: "type", text }),
-    }).catch(() => undefined);
-  }, [sessionId]);
-
   const handleBufferedType = useCallback((char: string) => {
-    typeBufferRef.current += char;
-    if (typeTimeoutRef.current) clearTimeout(typeTimeoutRef.current);
-    typeTimeoutRef.current = setTimeout(flushTypeBuffer, 15);
-  }, [flushTypeBuffer]);
+    void handleType(char);
+  }, [handleType]);
 
   const stripEmoji = (text: string): string => {
     return text
@@ -690,8 +670,8 @@ export default function OpPage() {
 
       if (e.key.length === 1) {
         e.preventDefault();
-        addLog(`KEYBOARD_INPUT: [${e.key}]`, "info");
-        handleBufferedType(e.key);
+        addLog(`KEY_CAPTURE: [${e.key}]`, "info");
+        void handleType(e.key);
       }
     };
 
@@ -700,7 +680,7 @@ export default function OpPage() {
       window.removeEventListener('keydown', handleGlobalKeyDown);
       if (typeTimeoutRef.current) clearTimeout(typeTimeoutRef.current);
     };
-  }, [step, handleKeyPress, handleBufferedType, flushTypeBuffer]);
+  }, [step, handleKeyPress, handleType, handleBufferedType]);
 
   useEffect(() => {
     return () => {
