@@ -19,7 +19,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const PORT = process.env.PORT || 7860;
-let activeRun = null; // Declare globally for use in throwIfRunAborted
+let activeRun = null;
+
+// Track specifics for targeted execution within the session object itself for better reliability
 
 app.get("/", (req, res) => {
   res.send(`
@@ -257,7 +259,7 @@ function broadcast(ipOrData, data) {
     ip = ipOrData;
     payload = data;
   }
-  
+
   if (!ip) return;
   const session = sessions.get(ip);
   if (!session || !session.sseClients) return;
@@ -371,7 +373,7 @@ async function waitForEnter(message, page = null) {
     log.info("Awaiting manual login protocol.");
     log.warning("After manual login is complete, press CONTINUE in the Command Deck.");
     broadcast(ip, { type: 'captcha_required' });
-    
+
     // Wait for the user to solve it via frontend
     const captchaText = await new Promise(resolve => {
       const session = getOrCreateSession(ip);
@@ -392,7 +394,7 @@ async function waitForEnter(message, page = null) {
         }
         return false;
       }, captchaText);
-      
+
       if (solved) {
         log.success("Captcha applied and login triggered ✓");
         await delay(3000); // Wait for login to process
@@ -594,7 +596,7 @@ async function broadcastScreenshot(ip, fetcher) {
   try {
     const session = sessions.get(ip);
     if (!session || !session.sseClients.length) return;
-    
+
     // Only capture if browser is alive and page is active
     if (session.activeBrowser?.isConnected() && session.activePage && !session.activePage.isClosed()) {
       const data = await fetcher(session.activePage);
@@ -690,10 +692,10 @@ logMethods.forEach(method => {
         clean.includes('.ico')
       )) return;
 
-      broadcast(ip, { 
-        type: 'log', 
-        level: method === 'error' ? 'error' : (method === 'success' ? 'success' : (method === 'action' ? 'action' : 'info')), 
-        msg: clean 
+      broadcast(ip, {
+        type: 'log',
+        level: method === 'error' ? 'error' : (method === 'success' ? 'success' : (method === 'action' ? 'action' : 'info')),
+        msg: clean
       });
     }
   };
@@ -732,7 +734,7 @@ async function waitWhilePaused() {
       log.info("SYSTEM: Protocol Paused", 2);
       session._wasPausedLogged = true;
     }
-    
+
     // Broadcast status to ensure UI is in sync
     const ip = sessionContext.getStore();
     if (ip) {
@@ -821,10 +823,10 @@ async function navigateToURL(page, url, pageName) {
         log.warning("Active page was closed unexpectedly, falling back to base page...");
         session.activePage = page;
       }
-      
+
       const actualPage = session.activePage || page;
       await actualPage.bringToFront();
-      
+
       // Force all links to open in current tab by stripping target="_blank"
       // This prevents "Detached Frame" errors caused by accidental tab proliferation
       await actualPage.evaluate(() => {
@@ -836,21 +838,21 @@ async function navigateToURL(page, url, pageName) {
         // Also observe for dynamic links
         const obs = new MutationObserver(preventPopups);
         obs.observe(document.body, { childList: true, subtree: true });
-      }).catch(() => {});
+      }).catch(() => { });
 
       await actualPage.goto(url, {
         waitUntil: 'networkidle2',
         timeout: 30000
       });
       await delay(800);
-      
+
       // Re-apply zoom after navigation persistence
       if (session && session.pageZoom) {
         await targetPage.evaluate((z) => {
           document.body.style.zoom = z + "%";
         }, session.pageZoom);
       }
-      
+
       log.success(`Loaded ${pageName}`);
       return true;
     } catch (e) {
@@ -1120,8 +1122,8 @@ async function handleNetworkErrors(page) {
     const failure = request.failure();
     const errorText = failure ? failure.errorText : 'Unknown Error';
     if (
-      url.includes('google-analytics') || 
-      url.includes('analytics') || 
+      url.includes('google-analytics') ||
+      url.includes('analytics') ||
       url.includes('fonts.googleapis.com') ||
       url.includes('fonts.gstatic.com') ||
       url.includes('.css') ||
@@ -1132,7 +1134,7 @@ async function handleNetworkErrors(page) {
       url.includes('.svg') ||
       errorText === 'net::ERR_ABORTED'
     ) {
-      return; 
+      return;
     }
 
     // Log only meaningful internal or API network failures
@@ -1893,423 +1895,460 @@ async function run(inputConfig = {}, ip = 'local') {
     };
 
     const config = parseConfiguration(inputConfig);
-  const { 
-    enrollmentNo, password, feedbackOption, mentorDept, mentorName, 
-    theoryList, labList, teachingList, pageZoom, isMobile
-  } = config;
+    const {
+      enrollmentNo, password, feedbackOption, mentorDept, mentorName,
+      theoryList, labList, teachingList, pageZoom, isMobile
+    } = config;
 
-  const session = getCurrentSession();
-  if (session) {
-    session.pageZoom = pageZoom;
-  }
-
-  // Validate required fields
-  if (!feedbackOption) {
-    throw new Error("Missing required configuration (Feedback Option)");
-  }
-
-  stats.startTime = Date.now();
-  const startTimestamp = getCurrentTimestamp();
-  const ip = sessionContext.getStore() || 'local';
-
-  log.section("FEEDBACK AUTOMATION BOT STARTED");
-  log.time(`Start Time: ${startTimestamp}`);
-  log.info("Configuration loaded successfully");
-  log.detail(`Mode: ${IS_LOCAL ? 'LOCAL (Testing)' : 'PRODUCTION (Live Site)'}`);
-  log.detail(`Username: ${enrollmentNo || 'N/A'}`);
-  log.detail(`Feedback Option: ${feedbackOption}`);
-  log.detail(`Theory Subjects: ${theoryList.length}`);
-  log.detail(`Lab Subjects: ${labList.length}`);
-  log.detail(`Teaching Subjects: ${teachingList.length}`);
-  log.detail(`Mentor Feedback: ${mentorDept && mentorName ? 'Yes' : 'No'}`);
-  log.detail(`Applied Zoom: ${pageZoom}%`);
-
-  log.section("LAUNCHING BROWSER");
-  const browser = await puppeteer.launch({
-    headless: IS_LOCAL ? false : "new",
-    slowMo: IS_LOCAL ? 30 : 0,
-    args: [
-      '--disable-blink-features=AutomationControlled',
-      '--disable-web-security',
-      '--disable-features=IsolateOrigins,site-per-process',
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--disable-gpu',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process'
-    ],
-    defaultViewport: isMobile 
-      ? { width: 375, height: 667, isMobile: true, hasTouch: true } 
-      : (IS_LOCAL ? null : { width: 1280, height: 800 })
-  });
-
-  const page = await browser.newPage();
-
-  // Set login URL based on environment
-  let loginUrl;
-  if (IS_LOCAL) {
-    loginUrl = `file://${path.join(__dirname, "mock-portal", "login.html")}`;
-    URLS.local.login = loginUrl;
-  } else {
-    loginUrl = URLS.production.login;
-  }
-
-  dismissAlerts(page);
-  activePage = page;
-  activeBrowser = browser;
-  handleNetworkErrors(page);
-
-  const bindActivePage = (nextPage, reason) => {
-    if (!nextPage || nextPage.isClosed()) return;
-    sessionContext.run(ip, () => {
-      activePage = nextPage;
-      const session = getCurrentSession();
-      if (session) session.activePage = nextPage;
-      
-      handleNetworkErrors(nextPage);
-      if (reason) {
-        log.info(`[TAB SWITCH] ${reason}`);
-        broadcast(ip, { type: 'status_update', msg: `TAB_SWITCH: ${reason}` });
-      }
-    });
-  };
-
-  // Track new tabs/windows — always update activePage so screenshot loop follows automation
-  const onTargetCreated = async (target) => {
-    if (target.type() === 'page') {
-      try {
-        const newPage = await target.page();
-        if (newPage) {
-          bindActivePage(newPage, 'New window focused');
-          newPage.on('popup', popup => bindActivePage(popup, 'Popup focused'));
-          newPage.on('framenavigated', () => bindActivePage(newPage));
-        }
-      } catch (e) {
-        // ignore if target already closed
-      }
+    const session = getCurrentSession();
+    if (session) {
+      session.pageZoom = pageZoom;
     }
-  };
-  browser.on('targetcreated', onTargetCreated);
-  browser.on('targetchanged', onTargetCreated);
-  page.on('popup', popup => bindActivePage(popup, 'Popup focused'));
-  page.on('framenavigated', () => bindActivePage(page));
 
-  log.success("Browser launched successfully");
-
-  // Screenshot broadcasting loop — near-real-time cadence for smooth live manual interaction
-  let isCapturingFrame = false;
-  const frameIntervalMs = IS_LOCAL ? 100 : 40; // High performance cadence (25fps)
-  let frameCount = 0;
-  const screenshotInterval = setInterval(async () => {
-    if (isCapturingFrame) return;
-    await sessionContext.run(ip, async () => {
-      try {
-        const session = sessions.get(ip);
-        if (!session || !session.sseClients.length) return;
-        throwIfRunAborted();
-        
-        // Prioritize session-level activePage first, then local activePage, then base page
-        const capturePage = session.activePage || activePage || page;
-        
-        if (browser.isConnected() && capturePage && !capturePage.isClosed()) {
-          isCapturingFrame = true;
-          const screenshotData = await capturePage.screenshot({ 
-            encoding: 'base64',
-            type: 'jpeg',
-            quality: 40
-          });
-          
-          broadcast(ip, { type: 'screenshot', data: `data:image/jpeg;base64,${screenshotData}` });
-          
-          frameCount++;
-          // Stream active telemetry disabled for clarity
-        } else if (!browser.isConnected()) {
-          clearInterval(screenshotInterval);
-        }
-      } catch (e) {
-        if (e?.name === 'AbortError') {
-          clearInterval(screenshotInterval);
-        }
-      } finally {
-        isCapturingFrame = false;
-      }
-    });
-  }, frameIntervalMs);
-
-  // ============= LOGIN =============
-  log.section("AUTHENTICATION");
-
-  log.action("Opening login page...");
-  log.detail(`URL: ${loginUrl}`);
-  await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-  await delay(800);
-  
-  // Detect IUSMS Server Error
-  const serverErrorDetected = await page.evaluate(() => {
-    const text = document.body.innerText;
-    return text.includes("Unable to connect to server") || text.includes("Server Error");
-  });
-
-  if (serverErrorDetected) {
-    log.error("SYSTEM ALERT: IUSMS Server is currently unresponsive (Unable to connect to server).");
-    log.info("This is an official IUSMS error. Please try again later.");
-    await browser.close();
-    clearInterval(screenshotInterval);
-    return;
-  }
-
-  log.success("IUSMS opened successfully.");
-  log.section("MANUAL LOGIN REQUIRED");
-  log.info("Please login manually.");
-  log.info("Click Continue Protocol after login.");
-
-  log.action("Entering credentials...");
-
-  // Find the actual input field selectors
-  const loginFields = await findLoginFields(page);
-
-  if (!loginFields.enrollmentSelector || !loginFields.passwordSelector) {
-    log.error("Could not find login input fields");
-    throw new Error("Login form fields not found on page");
-  }
-
-  log.detail(`Enrollment field: ${loginFields.enrollmentSelector}`);
-  log.detail(`Password field: ${loginFields.passwordSelector}`);
-
-  const loginMessage = "Please LOGIN manually in the Mission Control view. Once you reach the Dashboard, press SOLVE MATRIX to continue.";
-  broadcast(ip, { type: 'status_update', msg: 'Awaiting Manual Login' });
-  await waitForEnter(loginMessage, page);
-
-  log.success("Proceeding after manual login... ✓");
-
-  await page.evaluate(() => {
-    document.body.style.zoom = "100%";
-  });
-  log.info(`Resetting workspace view (Zoom: 100%)`, 2);
-
-  await ensurePageVisible(page);
-  log.success("Login successful! ✓");
-
-  // ============= DASHBOARD =============
-  log.section("DASHBOARD");
-  log.action("Verifying dashboard...");
-
-  const pageInfo = await getCurrentPageInfo(page);
-  log.detail(`Current URL: ${pageInfo.url}`);
-  let missingTheorySubjects = [];
-  if (IS_LOCAL) {
-    try {
-      await page.waitForSelector('#dashboardPage', { visible: true, timeout: 5000 });
-      log.success("Dashboard loaded");
-    } catch (e) {
-      log.warning("Dashboard verification: " + e.message);
+    // Validate required fields
+    if (!feedbackOption) {
+      throw new Error("Missing required configuration (Feedback Option)");
     }
-  } else {
-    log.success("Dashboard page reached");
-  }
 
-  // Check for available subjects
-  if (IS_LOCAL) {
-    log.section("CHECKING AVAILABLE OPTIONS");
+    stats.startTime = Date.now();
+    const startTimestamp = getCurrentTimestamp();
+    // Use the passed-in ip consistently to avoid store-mismatch issues
+    log.detail(`Internal session anchor: ${ip}`);
 
-    await navigateToPage(page, 'theory');
-    await page.waitForSelector('#theorySubject', { timeout: 3000 }).catch(() => { });
-    const availableTheorySubjects = await getAllAvailableOptions(page, '#theorySubject');
-    const providedTheorySubjects = Object.keys(theoryMap);
-    const missingTheorySubjects = availableTheorySubjects.filter(
-      opt => !providedTheorySubjects.some(s => opt.value.includes(s) || opt.text.includes(s))
-    );
+    log.section("FEEDBACK AUTOMATION BOT STARTED");
+    log.time(`Start Time: ${startTimestamp}`);
+    log.info("Configuration loaded successfully");
+    log.detail(`Mode: ${IS_LOCAL ? 'LOCAL (Testing)' : 'PRODUCTION (Live Site)'}`);
+    log.detail(`Username: ${enrollmentNo || 'N/A'}`);
+    log.detail(`Feedback Option: ${feedbackOption}`);
+    log.detail(`Theory Subjects: ${theoryList.length}`);
+    log.detail(`Lab Subjects: ${labList.length}`);
+    log.detail(`Teaching Subjects: ${teachingList.length}`);
+    log.detail(`Mentor Feedback: ${mentorDept && mentorName ? 'Yes' : 'No'}`);
+    log.detail(`Applied Zoom: ${pageZoom}%`);
 
-    if (missingTheorySubjects.length > 0) {
-      log.warning(`${missingTheorySubjects.length} theory subject(s) not in .env`);
-    }
-  }
-
-  // Navigate to feedback
-  log.section("STARTING FEEDBACK SUBMISSION");
-
-  if (IS_LOCAL) {
-    await navigateToPage(page, 'dashboard');
-    await delay(500);
-    await scrollToElement(page, '.link-button');
-    await page.evaluate(() => {
-      const feedbackLink = document.querySelector('.link-button');
-      if (feedbackLink) feedbackLink.click();
+    log.section("LAUNCHING BROWSER");
+    const browser = await puppeteer.launch({
+      headless: IS_LOCAL ? false : "new",
+      slowMo: IS_LOCAL ? 30 : 0,
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process'
+      ],
+      defaultViewport: isMobile
+        ? { width: 375, height: 667, isMobile: true, hasTouch: true }
+        : (IS_LOCAL ? null : { width: 1280, height: 800 })
     });
-    await delay(1000);
-  } else {
-    await navigateToURL(page, URLS.production.feedbackOptions, 'feedbackOptions');
-  }
 
-  await ensurePageVisible(page);
-  log.success("Ready to submit feedback");
-  // --- Detect and log all feedback links on the Feedback.aspx page ---
-  try {
-    log.action("Scanning available feedback links on Feedback.aspx...", 1);
-    const links = await page.$$eval('a[id*="lnk"]', els =>
-      els.map(e => ({
-        id: e.id,
-        text: e.textContent.trim(),
-        href: e.href
-      }))
-    );
+    const page = await browser.newPage();
 
-    if (links.length === 0) {
-      log.warning("No feedback links detected on page.", 2);
+    // Set login URL based on environment
+    let loginUrl;
+    if (IS_LOCAL) {
+      loginUrl = `file://${path.join(__dirname, "mock-portal", "login.html")}`;
+      URLS.local.login = loginUrl;
     } else {
-      links.forEach(l => log.detail(`Found link → [${l.id}] : "${l.text}" → ${l.href}`, 2));
-      const ordered = [
-        { key: 'theory', tokens: ['theory', 'iqac', 'lnktheory'] },
-        { key: 'lab', tokens: ['lab', 'lnklab'] },
-        { key: 'mentor', tokens: ['mentor', 'lnkmentor'] },
-        { key: 'teaching', tokens: ['teaching', 'learning', 'lnkteach'] }
-      ];
-      ordered.forEach(({ key, tokens }) => {
-        const match = links.find(link => {
-          const blob = `${link.id} ${link.text} ${link.href}`.toLowerCase();
-          return tokens.some(token => blob.includes(token));
-        });
-        if (match?.href) {
-          URLS.production[key] = match.href;
+      loginUrl = URLS.production.login;
+    }
+
+    dismissAlerts(page);
+    activePage = page;
+    activeBrowser = browser;
+    handleNetworkErrors(page);
+
+    const bindActivePage = (nextPage, reason) => {
+      if (!nextPage || nextPage.isClosed()) return;
+      sessionContext.run(ip, () => {
+        activePage = nextPage;
+        const session = getCurrentSession();
+        if (session) session.activePage = nextPage;
+
+        handleNetworkErrors(nextPage);
+        if (reason) {
+          log.info(`[TAB SWITCH] ${reason}`);
+          broadcast(ip, { type: 'status_update', msg: `TAB_SWITCH: ${reason}` });
         }
       });
-      log.detail(`Category execution order locked: Theory → Lab → Mentor → Teaching & Learning`, 2);
-    }
-  } catch (err) {
-    log.error(`Feedback link scan error: ${err.message}`, 2);
-  }
+    };
 
-  // ============= THEORY FEEDBACK =============
-  broadcast(ip, { type: 'status_update', msg: 'PHASE: Theory Feedback' });
-  if (theoryList.length > 0) {
-    log.section("THEORY FEEDBACK SUBMISSION");
-    log.info(`${theoryList.length} theory subject(s) to process\n`);
-
-    let index = 0;
-    for (const item of theoryList) {
-      await waitWhilePaused();
-      throwIfRunAborted();
-      index++;
-      const { subject: subjectCode, teacher: teacherName } = item;
-
-      log.subsection("", `Theory ${index}/${theoryList.length}: ${subjectCode}`);
-      log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      broadcast({ type: 'status_update', msg: `Theory ${index}/${theoryList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
-
-      const result = await submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption);
-
-      if (result === true) {
-        stats.totalSubmissions++;
-        log.success(`[+] Completed\n`);
-      } else if (result === 'skipped') {
-        log.skip(`[>>] Skipped\n`);
-      } else if (result === 'duplicate') {
-        log.warning(`[!] Already submitted\n`);
-      } else {
-        log.error(`[x] Failed\n`);
+    // Track new tabs/windows — always update activePage so screenshot loop follows automation
+    const onTargetCreated = async (target) => {
+      if (target.type() === 'page') {
+        try {
+          const newPage = await target.page();
+          if (newPage) {
+            bindActivePage(newPage, 'New window focused');
+            newPage.on('popup', popup => bindActivePage(popup, 'Popup focused'));
+            newPage.on('framenavigated', () => bindActivePage(newPage));
+          }
+        } catch (e) {
+          // ignore if target already closed
+        }
       }
+    };
+    browser.on('targetcreated', onTargetCreated);
+    browser.on('targetchanged', onTargetCreated);
+    page.on('popup', popup => bindActivePage(popup, 'Popup focused'));
+    page.on('framenavigated', () => bindActivePage(page));
 
-      await delay(300);
+    log.success("Browser launched successfully");
+
+    // Screenshot broadcasting loop — near-real-time cadence for smooth live manual interaction
+    let isCapturingFrame = false;
+    const frameIntervalMs = IS_LOCAL ? 100 : 40; // High performance cadence (25fps)
+    let frameCount = 0;
+    const screenshotInterval = setInterval(async () => {
+      if (isCapturingFrame) return;
+      await sessionContext.run(ip, async () => {
+        try {
+          const session = sessions.get(ip);
+          if (!session || !session.sseClients.length) return;
+          throwIfRunAborted();
+
+          // Prioritize session-level activePage first, then local activePage, then base page
+          const capturePage = session.activePage || activePage || page;
+
+          if (browser.isConnected() && capturePage && !capturePage.isClosed()) {
+            isCapturingFrame = true;
+            const screenshotData = await capturePage.screenshot({
+              encoding: 'base64',
+              type: 'jpeg',
+              quality: 40
+            });
+
+            broadcast(ip, { type: 'screenshot', data: `data:image/jpeg;base64,${screenshotData}` });
+
+            frameCount++;
+            // Stream active telemetry disabled for clarity
+          } else if (!browser.isConnected()) {
+            clearInterval(screenshotInterval);
+          }
+        } catch (e) {
+          if (e?.name === 'AbortError') {
+            clearInterval(screenshotInterval);
+          }
+        } finally {
+          isCapturingFrame = false;
+        }
+      });
+    }, frameIntervalMs);
+
+    // ============= LOGIN =============
+    log.section("AUTHENTICATION");
+
+    log.action("Opening login page...");
+    log.detail(`URL: ${loginUrl}`);
+    await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
+    await delay(800);
+
+    // Detect IUSMS Server Error
+    const serverErrorDetected = await page.evaluate(() => {
+      const text = document.body.innerText;
+      return text.includes("Unable to connect to server") || text.includes("Server Error");
+    });
+
+    if (serverErrorDetected) {
+      log.error("SYSTEM ALERT: IUSMS Server is currently unresponsive (Unable to connect to server).");
+      log.info("This is an official IUSMS error. Please try again later.");
+      await browser.close();
+      clearInterval(screenshotInterval);
+      return;
     }
-  }
 
-  // ============= LAB FEEDBACK =============
-  broadcast(ip, { type: 'status_update', msg: 'PHASE: Lab Feedback' });
-  if (labList.length > 0) {
-    log.section("LAB FEEDBACK SUBMISSION");
-    log.info(`${labList.length} lab subject(s) to process\n`);
+    log.success("IUSMS opened successfully.");
+    log.section("MANUAL LOGIN REQUIRED");
+    log.info("Please login manually.");
+    log.info("Click Continue Protocol after login.");
 
-    let index = 0;
-    for (const item of labList) {
-      await waitWhilePaused();
-      throwIfRunAborted();
-      index++;
-      const { subject: subjectCode, teacher: teacherName } = item;
+    log.action("Entering credentials...");
 
-      log.subsection("", `Lab ${index}/${labList.length}: ${subjectCode}`);
-      log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      broadcast(ip, { type: 'status_update', msg: `Lab ${index}/${labList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
+    // Find the actual input field selectors
+    const loginFields = await findLoginFields(page);
 
-      const currentPage = getCurrentSession().activePage || page;
-    const result = await submitLabFeedback(currentPage, subjectCode, teacherName, feedbackOption);
+    if (!loginFields.enrollmentSelector || !loginFields.passwordSelector) {
+      log.error("Could not find login input fields");
+      throw new Error("Login form fields not found on page");
+    }
 
-      if (result === true) {
-        stats.totalSubmissions++;
-        log.success(`[+] Completed\n`);
-      } else if (result === 'skipped') {
-        log.skip(`[>>] Skipped\n`);
-      } else if (result === 'duplicate') {
-        log.warning(`[!] Already submitted\n`);
-      } else {
-        log.error(`[x] Failed\n`);
+    log.detail(`Enrollment field: ${loginFields.enrollmentSelector}`);
+    log.detail(`Password field: ${loginFields.passwordSelector}`);
+
+    const loginMessage = "Please LOGIN manually in the Mission Control view. Once you reach the Dashboard, press SOLVE MATRIX to continue.";
+    broadcast(ip, { type: 'status_update', msg: 'Awaiting Manual Login' });
+    await waitForEnter(loginMessage, page);
+
+    log.success("Proceeding after manual login... ✓");
+
+    await page.evaluate(() => {
+      document.body.style.zoom = "100%";
+    });
+    log.info(`Resetting workspace view (Zoom: 100%)`, 2);
+
+    await ensurePageVisible(page);
+    log.success("Login successful! ✓");
+
+    // ============= DASHBOARD =============
+    log.section("DASHBOARD");
+    log.action("Verifying dashboard...");
+
+    const pageInfo = await getCurrentPageInfo(page);
+    log.detail(`Current URL: ${pageInfo.url}`);
+    let missingTheorySubjects = [];
+    if (IS_LOCAL) {
+      try {
+        await page.waitForSelector('#dashboardPage', { visible: true, timeout: 5000 });
+        log.success("Dashboard loaded");
+      } catch (e) {
+        log.warning("Dashboard verification: " + e.message);
       }
-
-      await delay(300);
-    }
-  }
-
-  // ============= MENTOR FEEDBACK =============
-  broadcast(ip, { type: 'status_update', msg: 'PHASE: Mentor Feedback' });
-  if (mentorDept || mentorName) {
-    await waitWhilePaused();
-    log.section("MENTOR FEEDBACK SUBMISSION");
-    log.info(`Dept: ${mentorDept || 'NOT PROVIDED'}, Name: ${mentorName || 'NOT PROVIDED'}`);
-    broadcast(ip, { type: 'status_update', msg: `Mentor: ${mentorName || 'N/A'} (${mentorDept || 'N/A'})` });
-
-    const currentPage = getCurrentSession().activePage || page;
-    const result = await submitMentorFeedback(currentPage, mentorDept, mentorName, feedbackOption);
-
-    if (result === true) {
-      stats.totalSubmissions++;
-      log.success("[+] Completed\n");
-    } else if (result === 'skipped') {
-      log.skip("[>>] Skipped\n");
-    } else if (result === 'duplicate') {
-      log.warning("[!] Already submitted\n");
     } else {
-      log.error("[x] Failed\n");
+      log.success("Dashboard page reached");
     }
 
-    await delay(300);
-  }
+    // Check for available subjects
+    if (IS_LOCAL) {
+      log.section("CHECKING AVAILABLE OPTIONS");
 
-  // ============= TEACHING FEEDBACK =============
-  broadcast(ip, { type: 'status_update', msg: 'PHASE: Teaching & Learning Feedback' });
-  if (teachingList.length > 0) {
-    log.section("TEACHING & LEARNING FEEDBACK");
-    log.info(`${teachingList.length} teaching subject(s) to process\n`);
+      await navigateToPage(page, 'theory');
+      await page.waitForSelector('#theorySubject', { timeout: 3000 }).catch(() => { });
+      const availableTheorySubjects = await getAllAvailableOptions(page, '#theorySubject');
+      const providedTheorySubjects = Object.keys(theoryMap);
+      const missingTheorySubjects = availableTheorySubjects.filter(
+        opt => !providedTheorySubjects.some(s => opt.value.includes(s) || opt.text.includes(s))
+      );
 
-    let index = 0;
-    for (const item of teachingList) {
-      await waitWhilePaused();
-      throwIfRunAborted();
-      index++;
-      const { subject: subjectCode, teacher: teacherName } = item;
-
-      log.subsection("", `Teaching ${index}/${teachingList.length}: ${subjectCode}`);
-      log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
-      broadcast(ip, { type: 'status_update', msg: `Teaching ${index}/${teachingList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
-
-      const currentPage = getCurrentSession().activePage || page;
-      const result = await submitTeachingFeedback(currentPage, subjectCode, teacherName, feedbackOption);
-
-      if (result === true) {
-        stats.totalSubmissions++;
-        log.success(`Completed ✓\n`);
-      } else if (result === 'skipped') {
-        log.skip(`Skipped ⏭️\n`);
-      } else if (result === 'duplicate') {
-        log.warning(`Already exists ⚠️\n`);
-      } else {
-        log.error(`Failed ✗\n`);
+      if (missingTheorySubjects.length > 0) {
+        log.warning(`${missingTheorySubjects.length} theory subject(s) not in .env`);
       }
-
-      await delay(1000);
     }
-  }
+
+    // Navigate to feedback
+    log.section("STARTING FEEDBACK SUBMISSION");
+
+    if (IS_LOCAL) {
+      await navigateToPage(page, 'dashboard');
+      await delay(500);
+      await scrollToElement(page, '.link-button');
+      await page.evaluate(() => {
+        const feedbackLink = document.querySelector('.link-button');
+        if (feedbackLink) feedbackLink.click();
+      });
+      await delay(1000);
+    } else {
+      await navigateToURL(page, URLS.production.feedbackOptions, 'feedbackOptions');
+    }
+
+    await ensurePageVisible(page);
+    log.success("Ready to submit feedback");
+    // --- Detect and log all feedback links on the Feedback.aspx page ---
+    try {
+      log.action("Scanning available feedback links on Feedback.aspx...", 1);
+      const links = await page.$$eval('a[id*="lnk"]', els =>
+        els.map(e => ({
+          id: e.id,
+          text: e.textContent.trim(),
+          href: e.href
+        }))
+      );
+
+      if (links.length === 0) {
+        log.warning("No feedback links detected on page.", 2);
+      } else {
+        links.forEach(l => log.detail(`Found link → [${l.id}] : "${l.text}" → ${l.href}`, 2));
+        const ordered = [
+          { key: 'theory', tokens: ['theory', 'iqac', 'lnktheory'] },
+          { key: 'lab', tokens: ['lab', 'lnklab'] },
+          { key: 'mentor', tokens: ['mentor', 'lnkmentor'] },
+          { key: 'teaching', tokens: ['teaching', 'learning', 'lnkteach'] }
+        ];
+        ordered.forEach(({ key, tokens }) => {
+          const match = links.find(link => {
+            const blob = `${link.id} ${link.text} ${link.href}`.toLowerCase();
+            return tokens.some(token => blob.includes(token));
+          });
+          if (match?.href) {
+            URLS.production[key] = match.href;
+          }
+        });
+        log.detail(`Category execution order locked: Theory → Lab → Mentor → Teaching & Learning`, 2);
+      }
+    } catch (err) {
+      log.error(`Feedback link scan error: ${err.message}`, 2);
+    }
+
+    // ============= THEORY FEEDBACK =============
+    const specifics = session?.specifics;
+    
+    if (specifics) {
+      log.info(`[SPECIFICS_ENGAGED] Target locked: ${specifics.category} - ${specifics.subject || 'General'}`, 1);
+    }
+
+    if (!specifics || specifics.category === 'Theory') {
+      broadcast(ip, { type: 'status_update', msg: 'PHASE: Theory Feedback' });
+      if (theoryList.length > 0) {
+        log.section("THEORY FEEDBACK SUBMISSION");
+        log.info(`${theoryList.length} theory subject(s) to process\n`);
+
+        let index = 0;
+        for (const item of theoryList) {
+          await waitWhilePaused();
+          throwIfRunAborted();
+          index++;
+          const { subject: subjectCode, teacher: teacherName } = item;
+
+          // If in specifics mode, skip if not matching
+          if (specifics && specifics.category === 'Theory' && specifics.subject !== subjectCode) {
+            continue;
+          }
+
+          log.subsection("", `Theory ${index}/${theoryList.length}: ${subjectCode}`);
+          log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
+          broadcast(ip, { type: 'status_update', msg: `Theory ${index}/${theoryList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
+
+          const result = await submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption);
+
+          if (result === true) {
+            stats.totalSubmissions++;
+            log.success(`[+] Completed\n`);
+          } else if (result === 'skipped') {
+            log.skip(`[>>] Skipped\n`);
+          } else if (result === 'duplicate') {
+            log.warning(`[!] Already submitted\n`);
+          } else {
+            log.error(`[x] Failed\n`);
+          }
+
+          await delay(300);
+
+          // If we just finished our specific target, break the loop
+          if (specifics && specifics.category === 'Theory') break;
+        }
+      }
+    }
+
+    // ============= LAB FEEDBACK =============
+    if (!specifics || specifics.category === 'Lab') {
+      broadcast(ip, { type: 'status_update', msg: 'PHASE: Lab Feedback' });
+      if (labList.length > 0) {
+        log.section("LAB FEEDBACK SUBMISSION");
+        log.info(`${labList.length} lab subject(s) to process\n`);
+
+        let index = 0;
+        for (const item of labList) {
+          await waitWhilePaused();
+          throwIfRunAborted();
+          index++;
+          const { subject: subjectCode, teacher: teacherName } = item;
+
+          // Specifics filtering
+          if (specifics && specifics.category === 'Lab') {
+            const isTargetSubject = specifics.subject === subjectCode;
+            const isTargetTeacher = !specifics.teacher || specifics.teacher === teacherName;
+            if (!isTargetSubject || !isTargetTeacher) continue;
+          }
+
+          log.subsection("", `Lab ${index}/${labList.length}: ${subjectCode}`);
+          log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
+          broadcast(ip, { type: 'status_update', msg: `Lab ${index}/${labList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
+
+          const currentPage = getCurrentSession().activePage || page;
+          const result = await submitLabFeedback(currentPage, subjectCode, teacherName, feedbackOption);
+
+          if (result === true) {
+            stats.totalSubmissions++;
+            log.success(`[+] Completed\n`);
+          } else if (result === 'skipped') {
+            log.skip(`[>>] Skipped\n`);
+          } else if (result === 'duplicate') {
+            log.warning(`[!] Already submitted\n`);
+          } else {
+            log.error(`[x] Failed\n`);
+          }
+
+          await delay(300);
+          if (specifics && specifics.category === 'Lab') break;
+        }
+      }
+    }
+
+    // ============= MENTOR FEEDBACK =============
+    if (!specifics || specifics.category === 'Mentor') {
+      broadcast(ip, { type: 'status_update', msg: 'PHASE: Mentor Feedback' });
+      if (mentorDept || mentorName) {
+        await waitWhilePaused();
+        log.section("MENTOR FEEDBACK SUBMISSION");
+        log.info(`Dept: ${mentorDept || 'NOT PROVIDED'}, Name: ${mentorName || 'NOT PROVIDED'}`);
+        broadcast(ip, { type: 'status_update', msg: `Mentor: ${mentorName || 'N/A'} (${mentorDept || 'N/A'})` });
+
+        const currentPage = getCurrentSession().activePage || page;
+        const result = await submitMentorFeedback(currentPage, mentorDept, mentorName, feedbackOption);
+
+        if (result === true) {
+          stats.totalSubmissions++;
+          log.success("[+] Completed\n");
+        } else if (result === 'skipped') {
+          log.skip("[>>] Skipped\n");
+        } else if (result === 'duplicate') {
+          log.warning("[!] Already submitted\n");
+        } else {
+          log.error("[x] Failed\n");
+        }
+
+        await delay(300);
+      }
+    }
+
+    // ============= TEACHING FEEDBACK =============
+    if (!specifics || specifics.category === 'Teaching') {
+      broadcast(ip, { type: 'status_update', msg: 'PHASE: Teaching & Learning Feedback' });
+      if (teachingList.length > 0) {
+        log.section("TEACHING & LEARNING FEEDBACK");
+        log.info(`${teachingList.length} teaching subject(s) to process\n`);
+
+        let index = 0;
+        for (const item of teachingList) {
+          await waitWhilePaused();
+          throwIfRunAborted();
+          index++;
+          const { subject: subjectCode, teacher: teacherName } = item;
+
+          // Specifics filtering
+          if (specifics && specifics.category === 'Teaching' && specifics.subject !== subjectCode) {
+            continue;
+          }
+
+          log.subsection("", `Teaching ${index}/${teachingList.length}: ${subjectCode}`);
+          log.info(`Teacher: ${teacherName || 'NOT PROVIDED'}`);
+          broadcast(ip, { type: 'status_update', msg: `Teaching ${index}/${teachingList.length}: ${subjectCode} — ${teacherName || 'N/A'}` });
+
+          const currentPage = getCurrentSession().activePage || page;
+          const result = await submitTeachingFeedback(currentPage, subjectCode, teacherName, feedbackOption);
+
+          if (result === true) {
+            stats.totalSubmissions++;
+            log.success(`Completed ✓\n`);
+          } else if (result === 'skipped') {
+            log.skip(`Skipped ⏭️\n`);
+          } else if (result === 'duplicate') {
+            log.warning(`Already exists ⚠️\n`);
+          } else {
+            log.error(`Failed ✗\n`);
+          }
+
+          await delay(1000);
+          if (specifics && specifics.category === 'Teaching') break;
+        }
+      }
+    }
 
   log.section("RETURNING TO DASHBOARD");
 
@@ -2331,26 +2370,26 @@ async function run(inputConfig = {}, ip = 'local') {
 
   console.log(`
   TIMING INFORMATION
-  ${"=".repeat(70)}
-  Start Time    : ${startTimestamp}
-  End Time      : ${endTimestamp}
-  Total Duration: ${formatDuration(duration)}
+  ${ "=".repeat(70) }
+  Start Time: ${ startTimestamp }
+  End Time: ${ endTimestamp }
+  Total Duration: ${ formatDuration(duration) }
 
   EXECUTION SUMMARY
-  ${"=".repeat(70)}
-  [+] Successful : ${stats.totalSubmissions}
-  [x] Failed     : ${stats.totalFailed}
-  [>>] Skipped   : ${stats.totalSkipped}
-  [!] Duplicates : ${stats.duplicateAttempts.length}
-  Total Processed: ${stats.totalSubmissions + stats.totalFailed + stats.totalSkipped}
+  ${ "=".repeat(70) }
+    [+] Successful: ${ stats.totalSubmissions }
+    [x] Failed: ${ stats.totalFailed }
+    [>>] Skipped: ${ stats.totalSkipped }
+    [!] Duplicates: ${ stats.duplicateAttempts.length }
+  Total Processed: ${ stats.totalSubmissions + stats.totalFailed + stats.totalSkipped }
 
   BREAKDOWN BY CATEGORY:
-  . Theory         : ${theoryList.length} configured
-  . Lab            : ${labList.length} configured
-  . Mentor         : ${mentorDept && mentorName ? '1' : '0'} configured
-  . Teaching & Lrn : ${teachingList.length} configured
-  ${"=".repeat(70)}
-  `);
+  .Theory         : ${ theoryList.length } configured
+      .Lab            : ${ labList.length } configured
+        .Mentor         : ${ mentorDept && mentorName ? '1' : '0' } configured
+          .Teaching & Lrn : ${ teachingList.length } configured
+  ${ "=".repeat(70) }
+    `);
 
   broadcast(ip, {
     type: 'run_complete_summary',
@@ -2375,17 +2414,17 @@ async function run(inputConfig = {}, ip = 'local') {
 
   // Show skipped items in console
   if (stats.skippedItems.length > 0) {
-    console.log(`\n  SKIPPED ITEMS (${stats.skippedItems.length})`);
+    console.log(`\n  SKIPPED ITEMS(${ stats.skippedItems.length })`);
     stats.skippedItems.forEach(item => {
-      console.log(`    . ${item.category}: ${item.subject || 'N/A'} - ${item.reason}`);
+      console.log(`    .${ item.category }: ${ item.subject || 'N/A' } - ${ item.reason } `);
     });
   }
 
   // Show duplicate attempts in console
   if (stats.duplicateAttempts.length > 0) {
-    console.log(`\n  DUPLICATE FEEDBACK DETECTED (${stats.duplicateAttempts.length})`);
+    console.log(`\n  DUPLICATE FEEDBACK DETECTED(${ stats.duplicateAttempts.length })`);
     stats.duplicateAttempts.forEach(item => {
-      console.log(`    . ${item}`);
+      console.log(`    .${ item } `);
     });
   }
 
@@ -2397,6 +2436,7 @@ async function run(inputConfig = {}, ip = 'local') {
   // browser.close() is handled by /api/logout endpoint
 
   activeRun = null;
+  if (session) delete session.specifics;
   });
 }
 
@@ -2502,16 +2542,16 @@ app.post("/api/request-preset", async (req, res) => {
   
   await sessionContext.run(ip, async () => {
     log.section("📬 PRESET REQUEST RECEIVED");
-    log.info(`From: ${email}`);
-    log.detail(`Details: ${message}`);
+    log.info(`From: ${ email } `);
+    log.detail(`Details: ${ message } `);
     
     // In a real scenario, this would send an actual email via nodemailer
     // For now, we log it to the backend and return success
     console.log("-----------------------------------------");
-    console.log(`NEW PRESET REQUEST [${new Date().toISOString()}]`);
-    console.log(`USER EMAIL: ${email}`);
-    console.log(`MESSAGE: ${message}`);
-    console.log(`PROVIDED CONFIG:\n${JSON.stringify(configData, null, 2)}`);
+    console.log(`NEW PRESET REQUEST[${ new Date().toISOString() }]`);
+    console.log(`USER EMAIL: ${ email } `);
+    console.log(`MESSAGE: ${ message } `);
+    console.log(`PROVIDED CONFIG: \n${ JSON.stringify(configData, null, 2) } `);
     console.log("-----------------------------------------");
 
     res.send({ status: "success", message: "Request transmitted to Mission Control support." });
@@ -2534,13 +2574,13 @@ app.get("/api/stream", (req, res) => {
   session.sseClients.push(newClient);
 
   sessionContext.run(ip, () => {
-    log.info(`Remote client connected to stream [${clientId}]`);
+    log.info(`Remote client connected to stream[${ clientId }]`);
   });
 
   req.on("close", () => {
     session.sseClients = session.sseClients.filter(c => c.id !== clientId);
     sessionContext.run(ip, () => {
-      log.info(`Remote client disconnected [${clientId}]`);
+      log.info(`Remote client disconnected[${ clientId }]`);
     });
   });
 });
@@ -2554,7 +2594,7 @@ app.post("/api/logout", async (req, res) => {
         await session.activeBrowser.close();
         log.info("Browser closed via logout");
       } catch (e) {
-        log.warning(`Browser close error: ${e.message}`);
+        log.warning(`Browser close error: ${ e.message } `);
       }
     }
     broadcast(ip, { type: 'status_update', msg: 'PROCESS_COMPLETE' });
@@ -2581,8 +2621,8 @@ app.post("/api/execute", async (req, res) => {
         broadcast(ip, { type: 'status_update', msg: 'PROCESS_TERMINATED' });
         return;
       }
-      log.error(`API Runtime error: ${err.message}`);
-      broadcast(ip, { type: 'log', level: 'error', msg: `Fatal Backend Error: ${err.message}` });
+      log.error(`API Runtime error: ${ err.message } `);
+      broadcast(ip, { type: 'log', level: 'error', msg: `Fatal Backend Error: ${ err.message } ` });
     }).finally(async () => {
       await cleanupSession(ip);
     });
@@ -2593,6 +2633,17 @@ app.post("/api/execute", async (req, res) => {
       timestamp: getCurrentTimestamp()
     });
   });
+});
+
+app.post("/api/specifics", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const { category, subject, teacher } = req.body;
+  
+  const session = getOrCreateSession(ip);
+  session.specifics = { category, subject, teacher };
+  
+  log.info(`[SPECIFICS] Target locked for session ${ ip }: ${ category } - ${ subject || teacher || 'General' } `);
+  res.send({ status: "success", message: "Specific target locked." });
 });
 
 // ============= KEEP-ALIVE PROTOCOL =============
@@ -2616,66 +2667,66 @@ function initiateKeepAlive() {
   
   const PING_INTERVAL = 5 * 60 * 1000; // 5 minutes
   const SELF_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
-  
-  console.log(`📡 Keep-Alive Protocol Initiated. Target: ${SELF_URL}/api/ping`);
-  
-  setInterval(async () => {
-    try {
-      // Internal random workload before polling
-      const internalWork = Array.from({length: 50}, () => Math.random())
-        .reduce((acc, val) => acc + Math.sin(val), 0);
-        
-      const response = await fetch(`${SELF_URL}/api/ping`).catch(() => null);
-      if (response && response.ok) {
-        const data = await response.json();
-        console.log(`[SYSTEM] Pulse Successful. Entropy: ${internalWork.toFixed(4)} | Hash: ${data.calculation_hash}`);
+
+    console.log(`📡 Keep-Alive Protocol Initiated. Target: ${SELF_URL}/api/ping`);
+
+    setInterval(async () => {
+      try {
+        // Internal random workload before polling
+        const internalWork = Array.from({ length: 50 }, () => Math.random())
+          .reduce((acc, val) => acc + Math.sin(val), 0);
+
+        const response = await fetch(`${SELF_URL}/api/ping`).catch(() => null);
+        if (response && response.ok) {
+          const data = await response.json();
+          console.log(`[SYSTEM] Pulse Successful. Entropy: ${internalWork.toFixed(4)} | Hash: ${data.calculation_hash}`);
+        }
+      } catch (e) {
+        // Silent fail to avoid log noise
       }
-    } catch (e) {
-      // Silent fail to avoid log noise
-    }
-  }, PING_INTERVAL);
-}
+    }, PING_INTERVAL);
+  }
 
 // ============= MAIN ENTRY POINT =============
 async function startServer() {
-  const colors = {
-    reset: '\x1b[0m',
-    bright: '\x1b[1m',
-    cyan: '\x1b[36m',
-    yellow: '\x1b[33m',
-    green: '\x1b[32m',
-    red: '\x1b[31m'
-  };
+      const colors = {
+        reset: '\x1b[0m',
+        bright: '\x1b[1m',
+        cyan: '\x1b[36m',
+        yellow: '\x1b[33m',
+        green: '\x1b[32m',
+        red: '\x1b[31m'
+      };
 
-  if (IS_LOCAL) {
-    displayWelcomeBanner();
-  }
-
-  if (IS_LOCAL) {
-    // Local mode uses a default 'local' session context
-    sessionContext.run('local', async () => {
-      const shouldStart = await getUserConfirmation();
-      if (!shouldStart) {
-        console.log("\n" + colors.red + "❌ Operation cancelled by user." + colors.reset);
-        process.exit(0);
+      if (IS_LOCAL) {
+        displayWelcomeBanner();
       }
-      console.log("\n" + colors.green + colors.bright + "✅ Starting feedback automation..." + colors.reset + "\n");
-      run().catch(err => log.error(err.message));
-    });
-  } else {
-    app.listen(PORT, () => {
-      console.log(`🚀 Production Server running on port ${PORT}`);
-      console.log(`📡 Uplink Authorized: ${FRONTEND_URL}`);
-      initiateKeepAlive();
-    });
-  }
-}
+
+      if (IS_LOCAL) {
+        // Local mode uses a default 'local' session context
+        sessionContext.run('local', async () => {
+          const shouldStart = await getUserConfirmation();
+          if (!shouldStart) {
+            console.log("\n" + colors.red + "❌ Operation cancelled by user." + colors.reset);
+            process.exit(0);
+          }
+          console.log("\n" + colors.green + colors.bright + "✅ Starting feedback automation..." + colors.reset + "\n");
+          run().catch(err => log.error(err.message));
+        });
+      } else {
+        app.listen(PORT, () => {
+          console.log(`🚀 Production Server running on port ${PORT}`);
+          console.log(`📡 Uplink Authorized: ${FRONTEND_URL}`);
+          initiateKeepAlive();
+        });
+      }
+    }
 
 startServer();
 
-// Error handler for the main process
-process.on('uncaughtException', (err) => {
-  console.error("💥 SYSTEM-LEVEL FATAL ERROR:");
-  console.error(err.stack);
-  // In a multi-session environment, we try to keep the server alive unless it's a true system crash
-});
+  // Error handler for the main process
+  process.on('uncaughtException', (err) => {
+    console.error("💥 SYSTEM-LEVEL FATAL ERROR:");
+    console.error(err.stack);
+    // In a multi-session environment, we try to keep the server alive unless it's a true system crash
+  });

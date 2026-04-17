@@ -98,6 +98,10 @@ export default function OpPage() {
   const crosshairRef = useRef<HTMLDivElement>(null);
   const [isHoveringBrowser, setIsHoveringBrowser] = useState(false);
   const [requestEmail, setRequestEmail] = useState('');
+  const [specificsModalOpen, setSpecificsModalOpen] = useState(false);
+  const [hasContinued, setHasContinued] = useState(false);
+  const [selectedSpecCategory, setSelectedSpecCategory] = useState<string | null>(null);
+  const [isExecutingSpecific, setIsExecutingSpecific] = useState(false);
   const [sessionId, setSessionId] = useState(() => `sess-${Math.random().toString(36).substr(2, 9)}`);
   const [isSendingPreset, setIsSendingPreset] = useState(false);
   const [summary, setSummary] = useState<{
@@ -127,7 +131,7 @@ export default function OpPage() {
       if (savedConfig) {
         setFormData(prev => ({ ...prev, ...JSON.parse(savedConfig) }));
       }
-    } catch (_) {}
+    } catch (_) { }
 
     // Restore Run State
     try {
@@ -147,7 +151,7 @@ export default function OpPage() {
           teacher: '',
           remaining: 0
         });
-        
+
         if (restored.logs) {
           const baseLogs = restored.logs;
           if (restored.step === 'executing' && !restored.isKilled) {
@@ -165,7 +169,7 @@ export default function OpPage() {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
   const [presetMessage, setPresetMessage] = useState('');
 
@@ -181,7 +185,7 @@ export default function OpPage() {
 
     setIsSendingPreset(true);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    
+
     try {
       await fetch(`${backendUrl}/api/request-preset`, {
         method: 'POST',
@@ -231,7 +235,7 @@ export default function OpPage() {
 
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
     let finalMsg = stripEmoji(msg);
-    
+
     // Filtering logic
     const lowerMsg = finalMsg.toLowerCase();
     if (
@@ -239,7 +243,7 @@ export default function OpPage() {
       lowerMsg.includes('password field:') ||
       lowerMsg.includes('remote_click: computed matrix coords') ||
       lowerMsg.includes('page warning ignored: $(...).modal is not a function') ||
-      lowerMsg.includes('page warning ignored: $(...).modal') || 
+      lowerMsg.includes('page warning ignored: $(...).modal') ||
       /^(theory|lab|mentor|teaching)\s+\d+\/\d+.+$/i.test(finalMsg.trim())
     ) {
       return;
@@ -248,7 +252,7 @@ export default function OpPage() {
     if (finalMsg.includes('Entering credentials...')) {
       finalMsg = 'Starting Task...';
     }
-    
+
     const now = new Date();
     const hours = now.getHours();
     const minutes = now.getMinutes();
@@ -393,7 +397,7 @@ export default function OpPage() {
       if (data.type === 'log') {
         let msg = data.msg;
         if (typeof msg === 'string' && msg.includes('Entering credentials...')) {
-           msg = 'Starting Task...';
+          msg = 'Starting Task...';
         }
         addLog(msg, data.level);
         if (typeof data.msg === 'string' && data.msg.includes('IUSMS opened successfully')) {
@@ -486,12 +490,12 @@ export default function OpPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Check if at least one operational section is filled
-    const isReady = formData.theoryCodes.trim() || 
-                    formData.labCodes.trim() || 
-                    formData.mentorName.trim() || 
-                    formData.teachingCodes.trim();
+    const isReady = formData.theoryCodes.trim() ||
+      formData.labCodes.trim() ||
+      formData.mentorName.trim() ||
+      formData.teachingCodes.trim();
 
     if (!isReady) {
       showNotif("Might wanna fill the details, Eh?", "error");
@@ -524,7 +528,7 @@ export default function OpPage() {
     setShowReportButton(false);
     setSummary(null);
     setLogs([]);
-    
+
     addLog("System initialized. Establishing Uplink...", "action");
 
     await delay(500);
@@ -573,7 +577,7 @@ export default function OpPage() {
     try {
       await fetch(`${backendUrl}/api/resume`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'x-session-id': sessionId
         },
@@ -588,10 +592,52 @@ export default function OpPage() {
     }
   };
 
+  const ensureResumed = async () => {
+    setHasContinued(true);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      await fetch(`${backendUrl}/api/resume`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        }
+      });
+      setIsPaused(false);
+      addLog("Manual continuation confirmed. System resuming feedback loop.", "success");
+    } catch (err) {
+      addLog("Failed to send resume signal.", "error");
+    }
+  };
+
+  const handleExecuteSpecific = async (category: string, subject?: string, teacher?: string) => {
+    setIsExecutingSpecific(true);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      await fetch(`${backendUrl}/api/specifics`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        },
+        body: JSON.stringify({ category, subject, teacher })
+      });
+
+      addLog(`TARGET_LOCKED: ${category} - ${subject || teacher || 'General'}`, "success");
+
+      // Close modal but DO NOT auto-resume. Wait for manual Continue Protocol.
+      setSpecificsModalOpen(false);
+      setIsExecutingSpecific(false);
+    } catch (err) {
+      addLog("Failed to lock specific target.", "error");
+      setIsExecutingSpecific(false);
+    }
+  };
+
   const handleImageClick = async (e: React.MouseEvent<HTMLImageElement>) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const rect = e.currentTarget.getBoundingClientRect();
-    
+
     const img = e.currentTarget;
     const { naturalWidth, naturalHeight } = img;
     const imageRatio = naturalWidth / (naturalHeight || 1);
@@ -632,19 +678,19 @@ export default function OpPage() {
     }
 
     try {
-       // Direct non-blocking fetch for clicks to avoid queue delays
-        fetch(`${backendUrl}/api/interact`, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-session-id': sessionId
-          },
-          body: JSON.stringify({ action: 'click', x: x_scaled, y: y_scaled })
-        }).then(res => {
-          if (!res.ok) addLog(`Interact Failed: status ${res.status}`, "error");
-        }).catch(err => {
-          addLog(`Interact Network Error: ${err.message}`, "error");
-        });
+      // Direct non-blocking fetch for clicks to avoid queue delays
+      fetch(`${backendUrl}/api/interact`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        },
+        body: JSON.stringify({ action: 'click', x: x_scaled, y: y_scaled })
+      }).then(res => {
+        if (!res.ok) addLog(`Interact Failed: status ${res.status}`, "error");
+      }).catch(err => {
+        addLog(`Interact Network Error: ${err.message}`, "error");
+      });
     } catch (err) {
       console.error("Interaction failed");
     }
@@ -654,7 +700,7 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     fetch(`${backendUrl}/api/interact`, {
       method: "POST",
-      headers: { 
+      headers: {
         "Content-Type": "application/json",
         "x-session-id": sessionId
       },
@@ -666,7 +712,7 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     fetch(`${backendUrl}/api/interact`, {
       method: "POST",
-      headers: { 
+      headers: {
         "Content-Type": "application/json",
         "x-session-id": sessionId
       },
@@ -737,7 +783,7 @@ export default function OpPage() {
     setIsPaused(paused); // Optimistic update
     try {
       const endpoint = paused ? '/api/pause' : '/api/resume-protocol';
-      await fetch(`${backendUrl}${endpoint}`, { 
+      await fetch(`${backendUrl}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -756,14 +802,14 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     try {
       addLog("Logging out and closing browser...", "action");
-      await fetch(`${backendUrl}/api/logout`, { 
+      await fetch(`${backendUrl}/api/logout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-session-id': sessionId
         }
       });
-    } catch (_) {}
+    } catch (_) { }
     setStep('form');
     setLogs([]);
     setLiveScreenshot(null);
@@ -781,11 +827,7 @@ export default function OpPage() {
     }
   };
 
-  const ensureResumed = async () => {
-    if (isPaused) {
-      await setProtocolPaused(false);
-    }
-  };
+
 
   const handleKill = async () => {
     setKillModalOpen(true);
@@ -796,7 +838,7 @@ export default function OpPage() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     setLogs([]); // Burn logs on kill
     addLog('[SYSTEM OVERRIDE] Kill sequence initiated...', 'warning');
-    
+
     try {
       await fetch(`${backendUrl}/api/kill`, { method: 'POST' });
       addLog('CONNECTION SEVERED: Target instance destroyed.', 'error');
@@ -938,7 +980,7 @@ export default function OpPage() {
 
       {step === 'form' ? (
         <form className={`${styles.form} ${isGlobalSyncPulse ? styles.globalSyncPulse : ''}`} onSubmit={handleSubmit}>
-         
+
           {/* Section 1.5: Presets */}
           <div className={`${styles.section} ${styles.sectionVisible} glass`}>
             <div className={styles.sectionTitle}>
@@ -952,7 +994,7 @@ export default function OpPage() {
             >
               <label className={styles.label}>Load System Preset</label>
               <div className={styles.customDropdown}>
-                <div 
+                <div
                   className={`${styles.dropdownTrigger} ${openDropdown === 'presets' ? styles.open : ''}`}
                   onClick={() => setOpenDropdown(openDropdown === 'presets' ? null : 'presets')}
                 >
@@ -961,7 +1003,7 @@ export default function OpPage() {
                 </div>
                 <AnimatePresence>
                   {openDropdown === 'presets' && (
-                    <motion.div 
+                    <motion.div
                       className={styles.dropdownMenu}
                       initial={{ opacity: 0, y: -10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -969,8 +1011,8 @@ export default function OpPage() {
                       transition={{ duration: 0.2, ease: "easeOut" }}
                     >
                       {Object.keys(PRESETS).map(name => (
-                        <div 
-                          key={name} 
+                        <div
+                          key={name}
                           className={`${styles.dropdownItem} ${selectedPreset === name ? styles.dropdownItemActive : ''}`}
                           onClick={() => {
                             handleLoadPreset({ target: { value: name } } as any);
@@ -986,8 +1028,8 @@ export default function OpPage() {
               </div>
               <div className={styles.presetRequestWrapper}>
                 <span>Want your own preset?</span>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={styles.mailEmojiBtn}
                   onClick={() => setPresetModalOpen(true)}
                   title="Request Custom Preset"
@@ -1012,7 +1054,7 @@ export default function OpPage() {
             >
               <label className={styles.label}>Response Strategy</label>
               <div className={styles.customDropdown}>
-                <div 
+                <div
                   className={`${styles.dropdownTrigger} ${openDropdown === 'strategy' ? styles.open : ''}`}
                   onClick={() => setOpenDropdown(openDropdown === 'strategy' ? null : 'strategy')}
                 >
@@ -1021,7 +1063,7 @@ export default function OpPage() {
                 </div>
                 <AnimatePresence>
                   {openDropdown === 'strategy' && (
-                    <motion.div 
+                    <motion.div
                       className={styles.dropdownMenu}
                       initial={{ opacity: 0, y: -10, scale: 0.95 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1029,8 +1071,8 @@ export default function OpPage() {
                       transition={{ duration: 0.2, ease: "easeOut" }}
                     >
                       {["Never", "Rarely", "Occasionally", "Mostly", "Always"].map(opt => (
-                        <div 
-                          key={opt} 
+                        <div
+                          key={opt}
                           className={`${styles.dropdownItem} ${formData.feedbackOption === opt ? styles.dropdownItemActive : ''}`}
                           onClick={() => {
                             handleInputChange({ target: { name: 'feedbackOption', value: opt } } as any);
@@ -1052,28 +1094,28 @@ export default function OpPage() {
               <span>Section 03 - Feedback Format</span>
             </div>
             <div className={styles.modalBody}>
-                    <div className={styles.formatGuide}>
-                      <strong>Directive:</strong><br/>
-                      In each section you can add multiple subjects and teachers separated by commas.<br/>
-                      Ensure correct spelling, correct subject code, synced to the correct techer.<br />
-                      In lab n teaching quality u hav to mention same subject code twice with different teachers.<br /><br />
-                      
-                      # Theory Matrix<br/>
-                      THEORY_SUBJECTS=CG302,CS305,CS313,CS315,CS348,CS394,EC339<br/>
-                      THEORY_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Akhlaque Ahmad Khan<br/><br/>
-                      # Lab Modules<br/>
-                      LAB_SUBJECTS=CS306,CS314,CS396<br/>
-                      LAB_TEACHERS=Falak Alam,Naziya Anjum,Mr. Sunil Singh<br/><br/>
-                      # Mentor Directive<br/>
-                      MENTOR_DEPT=Computer Science<br/>
-                      MENTOR_NAME=Nida Khan<br/><br/>
-                      # Learning Protocols<br/>
-                      TEACHING_SUBJECTS=CG302,CS305,CS303,CS306,CS313,CS315,CS348,CS394,CS396,EC339<br/>
-                      TEACHING_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan<br/><br/>
-                    </div>
-                  </div>
+              <div className={styles.formatGuide}>
+                <strong>Directive:</strong><br />
+                In each section you can add multiple subjects and teachers separated by commas.<br />
+                Ensure correct spelling, correct subject code, synced to the correct techer.<br />
+                In lab n teaching quality u hav to mention same subject code twice with different teachers.<br /><br />
+
+                # Theory Matrix<br />
+                THEORY_SUBJECTS=CG302,CS305,CS313,CS315,CS348,CS394,EC339<br />
+                THEORY_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Akhlaque Ahmad Khan<br /><br />
+                # Lab Modules<br />
+                LAB_SUBJECTS=CS306,CS314,CS396<br />
+                LAB_TEACHERS=Falak Alam,Naziya Anjum,Mr. Sunil Singh<br /><br />
+                # Mentor Directive<br />
+                MENTOR_DEPT=Computer Science<br />
+                MENTOR_NAME=Nida Khan<br /><br />
+                # Learning Protocols<br />
+                TEACHING_SUBJECTS=CG302,CS305,CS303,CS306,CS313,CS315,CS348,CS394,CS396,EC339<br />
+                TEACHING_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan<br /><br />
+              </div>
+            </div>
           </div>
-                
+
           {/* Section 4: Theory */}
           <div className={`${styles.section} glass`}>
             <div className={styles.sectionTitle}>
@@ -1205,14 +1247,14 @@ export default function OpPage() {
           {/* ── Preset Request Modal ── */}
           <AnimatePresence>
             {presetModalOpen && (
-              <motion.div 
+              <motion.div
                 className={styles.modalOverlay}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setPresetModalOpen(false)}
               >
-                <motion.div 
+                <motion.div
                   className={styles.modalContent}
                   initial={{ scale: 0.9, opacity: 0, y: 20 }}
                   animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -1227,25 +1269,25 @@ export default function OpPage() {
                   </div>
                   <div className={styles.modalBody}>
                     <div className={styles.formatGuide}>
-                      <strong>Recommended Format:</strong><br/>
-                      # Class/Section Info<br/>
-                      CLASS_INFO=Sem6, Yr 3, CCAI B<br/><br/>
-                      # Theory subjects and teachers<br/>
-                      THEORY_SUBJECTS=CG302,CS305,CS313,CS315,CS348,CS394,EC339<br/>
-                      THEORY_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Akhlaque Ahmad Khan<br/><br/>
-                      # Lab subjects and teachers<br/>
-                      LAB_SUBJECTS=CS306,CS314,CS396<br/>
-                      LAB_TEACHERS=Falak Alam,Naziya Anjum,Mr. Sunil Singh<br/><br/>
-                      # Mentor details<br/>
-                      MENTOR_DEPT=Computer Science<br/>
-                      MENTOR_NAME=Nida Khan<br/><br/>
-                      # Teaching & Learning<br/>
-                      TEACHING_SUBJECTS=CG302,CS305,CS303,CS306,CS313,CS315,CS348,CS394,CS396,EC339<br/>
-                      TEACHING_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan<br/><br/>
-                      # Feedback option<br/>
+                      <strong>Recommended Format:</strong><br />
+                      # Class/Section Info<br />
+                      CLASS_INFO=Sem6, Yr 3, CCAI B<br /><br />
+                      # Theory subjects and teachers<br />
+                      THEORY_SUBJECTS=CG302,CS305,CS313,CS315,CS348,CS394,EC339<br />
+                      THEORY_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Akhlaque Ahmad Khan<br /><br />
+                      # Lab subjects and teachers<br />
+                      LAB_SUBJECTS=CS306,CS314,CS396<br />
+                      LAB_TEACHERS=Falak Alam,Naziya Anjum,Mr. Sunil Singh<br /><br />
+                      # Mentor details<br />
+                      MENTOR_DEPT=Computer Science<br />
+                      MENTOR_NAME=Nida Khan<br /><br />
+                      # Teaching & Learning<br />
+                      TEACHING_SUBJECTS=CG302,CS305,CS303,CS306,CS313,CS315,CS348,CS394,CS396,EC339<br />
+                      TEACHING_TEACHERS=Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan<br /><br />
+                      # Feedback option<br />
                       FEEDBACK_OPTION=Always
                     </div>
-                    <textarea 
+                    <textarea
                       className={styles.modalTextarea}
                       placeholder="Enter your preset details or request here..."
                       value={presetMessage}
@@ -1253,7 +1295,7 @@ export default function OpPage() {
                     />
                     <div className={styles.modalInputGroup}>
                       <label className={styles.label}>Your Uplink Address (Email)</label>
-                      <input 
+                      <input
                         type="email"
                         placeholder="matrix-user@example.com"
                         className={`${styles.modalEmailInput} ${(requestEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestEmail)) ? styles.invalidInput : ''}`}
@@ -1261,9 +1303,9 @@ export default function OpPage() {
                         onChange={(e) => setRequestEmail(e.target.value)}
                       />
                     </div>
-                    <button 
+                    <button
                       type="button"
-                      className="btn-primary" 
+                      className="btn-primary"
                       style={{ width: '100%', padding: '1.2rem', marginTop: '1.5rem' }}
                       onClick={handleSendPresetRequest}
                       disabled={isSendingPreset}
@@ -1320,10 +1362,10 @@ export default function OpPage() {
           <div className={styles.dashboardLayout}>
             <div className={styles.browserSection}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <div style={{ 
-                  color: 'var(--primary)', 
-                  fontSize: 'clamp(0.5rem, 2vw, 0.7rem)', 
-                  fontWeight: 'bold', 
+                <div style={{
+                  color: 'var(--primary)',
+                  fontSize: 'clamp(0.5rem, 2vw, 0.7rem)',
+                  fontWeight: 'bold',
                   letterSpacing: '0.5px',
                   marginBottom: '0.5rem',
                   whiteSpace: 'nowrap',
@@ -1334,9 +1376,9 @@ export default function OpPage() {
                 </div>
               </div>
 
-              <div 
-                className={styles.browserView} 
-                onDoubleClick={() => setIsZoomed(!isZoomed)} 
+              <div
+                className={styles.browserView}
+                onDoubleClick={() => setIsZoomed(!isZoomed)}
                 onMouseMove={(e) => {
                   if (crosshairRef.current) {
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -1349,10 +1391,10 @@ export default function OpPage() {
                 style={{ position: 'relative' }}
               >
                 {isHoveringBrowser && !isKilled && (
-                  <motion.div 
+                  <motion.div
                     ref={crosshairRef}
                     className={styles.customCrosshair}
-                    animate={{ 
+                    animate={{
                       scale: clickIndicator ? 0.6 : 1.2,
                       opacity: 1
                     }}
@@ -1363,7 +1405,7 @@ export default function OpPage() {
                     <div className={styles.centerDot} />
                   </motion.div>
                 )}
-                
+
                 <div className={styles.liveOverlay}>{isKilled ? 'CONNECTION_LOST' : 'LIVE_REMOTE_VIEW (INTERACTIVE)'}</div>
 
                 {/* CRT Power Animation Overlay */}
@@ -1374,12 +1416,12 @@ export default function OpPage() {
                 )}
 
                 {/* Black screen for termination state AND dynamic page load mask */}
-                <div 
-                   className={styles.blackScreen} 
-                   style={{ 
-                     opacity: (isKilled || (!isPageLoaded && step === 'executing')) && crtState === 'none' ? 1 : 0,
-                     transition: 'opacity 0.8s ease'
-                   }} 
+                <div
+                  className={styles.blackScreen}
+                  style={{
+                    opacity: (isKilled || (!isPageLoaded && step === 'executing')) && crtState === 'none' ? 1 : 0,
+                    transition: 'opacity 0.8s ease'
+                  }}
                 />
 
                 {liveScreenshot ? (
@@ -1426,14 +1468,14 @@ export default function OpPage() {
               <div className={styles.logStream} ref={logContainerRef} onScroll={handleLogScroll}>
                 {logs.map(log => {
                   const toLow = log.msg.toLowerCase();
-                  const isGold = toLow.includes('completed') || 
-                                 toLow.includes('starting task') ||
-                                 toLow.includes('%') || 
-                                 toLow.includes('feedback') || 
-                                 toLow.includes('mentor') || 
-                                 toLow.includes('subject') ||
-                                 toLow.includes('submitted') ||
-                                 toLow.includes('submission');
+                  const isGold = toLow.includes('completed') ||
+                    toLow.includes('starting task') ||
+                    toLow.includes('%') ||
+                    toLow.includes('feedback') ||
+                    toLow.includes('mentor') ||
+                    toLow.includes('subject') ||
+                    toLow.includes('submitted') ||
+                    toLow.includes('submission');
 
                   return (
                     <div key={log.id} className={styles.logEntry}>
@@ -1450,96 +1492,113 @@ export default function OpPage() {
                 <div ref={logEndRef} />
               </div>
 
-                  {!isKilled && (
-                    <motion.div
-                      className={styles.commandDeck}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                    >
-                      <div className={styles.commandDeckTitle}><span className={styles.spinningGear}>⚙</span> COMMAND DECK</div>
-                      <div className={styles.commandDeckRow}>
-                        {isCaptchaRequired && (
-                          <button
-                            onClick={handleCaptchaSolved}
-                            className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
-                            style={{ background: 'rgba(200, 163, 44, 0.15)' }}
-                          >
-                            ▶ Continue Protocol
-                          </button>
-                        )}
-                        {showReportButton ? (
-                          <button
-                            onClick={async () => {
-                              addLog("Commencing final synchronization...", "action");
-                              
-                              // Signal backend to close browser/tabs
-                              const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-                              try {
-                                await fetch(`${backendUrl}/api/logout`, {
-                                  method: 'POST',
-                                  headers: { 'x-session-id': sessionId }
-                                });
-                                addLog("Remote viewport severed successfully.", "success");
-                              } catch (e) {
-                                addLog("Warning: Could not terminate remote session gracefully.", "error");
-                              }
+              {!isKilled && (
+                <motion.div
+                  className={styles.commandDeck}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <div className={styles.commandDeckTitle}><span className={styles.spinningGear}>⚙</span> COMMAND DECK</div>
+                  <div className={styles.commandDeckRow}>
+                    {isCaptchaRequired && (
+                      <button
+                        onClick={handleCaptchaSolved}
+                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                        style={{ background: 'rgba(200, 163, 44, 0.15)' }}
+                      >
+                        ▶ Continue Protocol
+                      </button>
+                    )}
+                    {showReportButton ? (
+                      <button
+                        onClick={async () => {
+                          addLog("Commencing final synchronization...", "action");
 
-                              addLog("Initiating CRT shutdown sequence...", "action");
-                              addLog("MISSION_STATUS: Objective complete. System standing down.", "success");
-                              
-                              // Step 1: Fade out UI elements inside CRT
-                              setCrtState('off');
-                              
-                              // Step 2: Allow animation to breathe
-                              await delay(2800);
-                              
-                              // Step 3: Final state transition
-                              setStep('done');
-                              clearRunState('completed');
-                              closeStream();
-                            }}
-                            className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive} animate-pulse`}
-                            style={{ 
-                              background: 'rgba(0, 255, 0, 0.1)', 
-                              borderColor: '#00ff00', 
-                              color: '#00ff00',
-                              padding: '0.6rem 2rem',
-                              fontSize: '0.5rem'
-                            }}
-                          >
-                             ~ REPORT
-                          </button>
-                        ) : (
-                          <>
-                            {!isCaptchaRequired && (
-                              isPaused ? (
-                                <button
-                                  onClick={ensureResumed}
-                                  className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
-                                >
-                                  ▶ Resume Protocol
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={ensurePaused}
-                                  className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
-                                >
-                                  ⏸ Pause Protocol
-                                </button>
-                              )
-                            )}
-                          </>
+                          // Signal backend to close browser/tabs
+                          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+                          try {
+                            await fetch(`${backendUrl}/api/logout`, {
+                              method: 'POST',
+                              headers: { 'x-session-id': sessionId }
+                            });
+                            addLog("Remote viewport severed successfully.", "success");
+                          } catch (e) {
+                            addLog("Warning: Could not terminate remote session gracefully.", "error");
+                          }
+
+                          addLog("Initiating CRT shutdown sequence...", "action");
+                          addLog("MISSION_STATUS: Objective complete. System standing down.", "success");
+
+                          // Step 1: Fade out UI elements inside CRT
+                          setCrtState('off');
+
+                          // Step 2: Allow animation to breathe
+                          await delay(2800);
+
+                          // Step 3: Final state transition
+                          setStep('done');
+                          clearRunState('completed');
+                          closeStream();
+                        }}
+                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive} animate-pulse`}
+                        style={{
+                          background: 'rgba(0, 255, 0, 0.1)',
+                          borderColor: '#00ff00',
+                          color: '#00ff00',
+                          padding: '0.6rem 2rem',
+                          fontSize: '0.5rem'
+                        }}
+                      >
+                        ~ REPORT
+                      </button>
+                    ) : (
+                      <>
+                        {!isCaptchaRequired && (
+                          isPaused ? (
+                            <button
+                              onClick={ensureResumed}
+                              className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                            >
+                              ▶ Resume Protocol
+                            </button>
+                          ) : (
+                            <button
+                              onClick={ensurePaused}
+                              className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive}`}
+                            >
+                              ⏸ Pause Protocol
+                            </button>
+                          )
                         )}
+                      </>
+                    )}
+                    {step === 'executing' && !hasContinued && !isKilled &&
+                      !currentStatus.includes('Theory') &&
+                      !currentStatus.includes('Lab') &&
+                      !currentStatus.includes('Mentor') &&
+                      !currentStatus.includes('Teaching') && (
                         <button
-                          onClick={handleKill}
-                          className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
+                          onClick={() => setSpecificsModalOpen(true)}
+                          className={styles.commandDeckButton}
+                          style={{
+                            borderColor: '#00d2ff',
+                            color: '#00d2ff',
+                            textShadow: '0 0 10px rgba(0, 210, 255, 0.3)'
+                          }}
                         >
-                          ⏹ Kill Task
+                          / SPECIFICS
                         </button>
-                        
-                      </div>
-                    </motion.div>
-                  )}
+                      )}
+                    <button
+                      onClick={handleKill}
+                      className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
+                    >
+                      ⏹ Kill Task
+                    </button>
+
+                  </div>
+                </motion.div>
+              )}
 
             </div>
           </div>
@@ -1559,9 +1618,93 @@ export default function OpPage() {
           </div>
         </div>
       )}
+
+      {/* ── Specifics Portal Modal ── */}
+      <AnimatePresence>
+        {specificsModalOpen && (
+          <motion.div
+            className={styles.modalOverlay}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSpecificsModalOpen(false)}
+          >
+            <motion.div
+              className={styles.specModalContent}
+              initial={{ scale: 0.9, opacity: 0, x: 50 }}
+              animate={{ scale: 1, opacity: 1, x: 0 }}
+              exit={{ scale: 0.9, opacity: 0, x: 50 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button type="button" className={styles.modalClose} onClick={() => setSpecificsModalOpen(false)}>✕</button>
+
+              <div className={styles.modalHeader}>
+                <div className={styles.modalTitle}>⚡ TARGET_SPECIFICS</div>
+                <span className={styles.modalSubtext}>Select a targeted feedback vector for immediate execution.</span>
+              </div>
+
+              <div className={styles.specBody}>
+                {!selectedSpecCategory ? (
+                  <div className={styles.specGrid}>
+                    {['Theory', 'Lab', 'Mentor', 'Teaching'].map(cat => (
+                      <button
+                        key={cat}
+                        className={styles.specCatBtn}
+                        onClick={() => setSelectedSpecCategory(cat)}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.specList}>
+                    <button className={styles.backLink} onClick={() => setSelectedSpecCategory(null)}>← BACK TO CATEGORIES</button>
+                    <div className={styles.specSubTitle}>SELECT {selectedSpecCategory.toUpperCase()} TARGET:</div>
+
+                    <div className={styles.specItemScroll}>
+                      {selectedSpecCategory === 'Mentor' ? (
+                        <button
+                          className={styles.specItemBtn}
+                          onClick={() => handleExecuteSpecific('Mentor')}
+                        >
+                          {formData.mentorName} ({formData.mentorDept})
+                        </button>
+                      ) : (
+                        (() => {
+                          const listKey = selectedSpecCategory === 'Theory' ? 'theory' : (selectedSpecCategory === 'Lab' ? 'lab' : 'teaching');
+                          const subjects = formData[`${listKey}Codes` as keyof typeof formData].split(',').filter(s => s.trim());
+                          const teachers = formData[`${listKey}Teachers` as keyof typeof formData].split(',').filter(s => s.trim());
+
+                          return subjects.map((sub, idx) => (
+                            <button
+                              key={`${sub}-${idx}`}
+                              className={styles.specItemBtn}
+                              onClick={() => handleExecuteSpecific(selectedSpecCategory, sub.trim(), teachers[idx]?.trim())}
+                            >
+                              <span className={styles.specSubCode}>{sub.trim()}</span>
+                              <span className={styles.specTeaName}>{teachers[idx]?.trim() || 'No Teacher'}</span>
+                            </button>
+                          ));
+                        })()
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {isExecutingSpecific && (
+                <div className={styles.specLockingOverlay}>
+                  <div className={styles.loaderLine}></div>
+                  <span>LOCKING_TARGET...</span>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {statusNotif && (
-          <motion.div 
+          <motion.div
             className={styles.notificationPill}
             initial={{ opacity: 0, scale: 0.9, y: 20, x: typeof window !== 'undefined' && window.innerWidth < 600 ? 0 : 0 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
