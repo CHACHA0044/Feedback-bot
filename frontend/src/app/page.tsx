@@ -3,6 +3,7 @@
 import Link from "next/link";
 import styles from "./LandingPage.module.css";
 import { useEffect, useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import ElectricBorder from "@/components/ElectricBorder";
 
 interface Feature {
@@ -72,6 +73,7 @@ const features: Feature[] = [
 export default function LandingPage() {
   const [mounted, setMounted] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState<Feature | null>(null);
+  const [activeVideo, setActiveVideo] = useState<'v1' | 'v2'>('v2');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -139,7 +141,7 @@ export default function LandingPage() {
               color="#ffffff" // White lightning
               speed={1.5}
               chaos={0.12}
-              thickness={2}
+              thickness={1.7}
               borderRadius={20}
               className={styles.featureCardWrapper}
             >
@@ -158,19 +160,45 @@ export default function LandingPage() {
         ))}
       </section>
 
-      <div style={{ width: '100%', maxWidth: '1000px', margin: '6rem auto 2rem' }}>
+      <div style={{ width: '100%', maxWidth: '1000px', margin: '4rem auto 0' }}>
         <h2 className={styles.sectionTitle} style={{ textAlign: 'center', fontSize: '2.5rem' }}>System Clearance</h2>
-        <p className={styles.subtext} style={{ textAlign: 'center' }}>(older gitbash version)</p>
       </div>
 
       <section id="demo" className={`${styles.howItWorks} scroll-animate`}>
-        <div className={styles.videoContainer}>
-          <iframe 
-            src="https://drive.google.com/file/d/1n_JXNliyj0Nkn2cihvfX0Vd6b8CFk6yZ/preview" 
-            allow="autoplay"
-            title="Bot Demo Video"
-          ></iframe>
+        <div className={styles.videoSwitcher}>
+          <button 
+            className={`${styles.switchBtn} ${activeVideo === 'v2' ? styles.activeSwitch : ''}`}
+            onClick={() => setActiveVideo('v2')}
+          >
+            Mission Debrief v2.0
+          </button>
+          <button 
+            className={`${styles.switchBtn} ${activeVideo === 'v1' ? styles.activeSwitch : ''}`}
+            onClick={() => setActiveVideo('v1')}
+          >
+            Legacy Uplink (v1.0)
+          </button>
         </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div 
+            key={activeVideo}
+            initial={{ opacity: 0, scale: 0.98, filter: 'blur(10px)' }}
+            animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+            exit={{ opacity: 0, scale: 1.02, filter: 'blur(10px)' }}
+            transition={{ duration: 0.5, ease: "anticipate" }}
+            className={styles.videoContainer}
+          >
+            <iframe 
+              src={activeVideo === 'v2' 
+                ? "https://drive.google.com/file/d/1xquUNgrf-NrCYl3hVnm16KSIeVGkLRlz/preview" 
+                : "https://drive.google.com/file/d/1n_JXNliyj0Nkn2cihvfX0Vd6b8CFk6yZ/preview"
+              } 
+              allow="autoplay"
+              title="Bot Demo Video"
+            ></iframe>
+          </motion.div>
+        </AnimatePresence>
       </section>
 
       <footer className={styles.footer}>

@@ -42,15 +42,16 @@ app.get("/", (req, res) => {
         body {
           margin: 0; padding: 0; background: var(--bg); color: var(--primary);
           font-family: 'JetBrains Mono', monospace;
-          display: flex; align-items: center; justify-content: center; height: 100vh;
+          display: flex; align-items: center; justify-content: center; min-height: 100vh;
           overflow: hidden; text-transform: uppercase;
         }
 
         .container {
           position: relative; padding: 4rem; border: 1px solid var(--primary);
-          box-shadow: 0 0 40px var(--primary-glow), inset 0 0 20px var(--primary-glow);
-          background: rgba(0, 0, 0, 0.9); max-width: 90%; text-align: center;
+          box-shadow: 0 0 60px var(--primary-glow), inset 0 0 30px var(--primary-glow);
+          background: rgba(0, 0, 0, 0.95); width: 90%; max-width: 800px; text-align: center;
           border-radius: 4px; z-index: 5;
+          backdrop-filter: blur(10px);
         }
 
         .container::after {
@@ -59,56 +60,116 @@ app.get("/", (req, res) => {
           pointer-events: none;
         }
 
+        .pulse {
+          position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+          width: 300px; height: 300px; background: radial-gradient(circle, var(--primary-glow) 0%, transparent 70%);
+          animation: heart 2s infinite ease-in-out; pointer-events: none; z-index: -1;
+        }
+
+        @keyframes heart {
+          0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
+          50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.6; }
+        }
+
         h1 {
-          margin: 0; font-size: 3rem; letter-spacing: 0.8rem;
-          text-shadow: 0 0 15px var(--primary-glow);
-          animation: glitch 3s infinite;
+          margin: 0; font-size: clamp(2rem, 8vw, 4rem); letter-spacing: 0.5rem;
+          text-shadow: 0 0 20px var(--primary-glow);
+          animation: glitch 4s infinite;
         }
 
-        .status { margin-top: 2.5rem; font-size: 1.2rem; letter-spacing: 0.3rem; color: #fff; }
-        .status span { color: #00ff00; animation: blink 1s infinite; text-shadow: 0 0 10px #00ff00; }
-
-        .terminal-text { 
-           margin-top: 2.5rem; font-size: 0.9rem; color: #666; max-width: 450px; 
-           line-height: 1.6; margin-left: auto; margin-right: auto;
+        .status-bar {
+          margin-top: 2rem; display: flex; justify-content: center; gap: 2rem;
+          font-size: 0.8rem; letter-spacing: 0.2rem; border-top: 1px solid rgba(240, 195, 60, 0.2);
+          padding-top: 1.5rem;
         }
+
+        .status-item span { color: #fff; }
+        .active { color: #00ff00; text-shadow: 0 0 10px #00ff00; }
+
+        .terminal {
+          margin-top: 2.5rem; background: rgba(0,0,0,0.8); border: 1px solid rgba(240, 195, 60, 0.1);
+          padding: 1.5rem; text-align: left; font-size: 0.75rem; color: #666; height: 120px;
+          overflow: hidden; position: relative;
+        }
+
+        .log-line { margin-bottom: 0.3rem; }
+        .log-line span { color: var(--accent); }
 
         @keyframes glitch {
-          0% { transform: translate(0); text-shadow: 0 0 15px var(--primary-glow); }
-          2% { transform: translate(-3px, 3px); text-shadow: 3px 0 var(--accent), -3px 0 var(--primary); }
-          4% { transform: translate(3px, -3px); text-shadow: -3px 0 var(--accent), 3px 0 var(--primary); }
+          0%, 100% { transform: translate(0); clip-path: inset(0 0 0 0); }
+          2% { transform: translate(-5px, 2px); clip-path: inset(10% 0 80% 0); }
+          4% { transform: translate(5px, -2px); clip-path: inset(80% 0 10% 0); }
           6% { transform: translate(0); }
-          100% { transform: translate(0); }
         }
-
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
         .scanlines { 
           position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
           background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), 
                       linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03)); 
-          z-index: 10; background-size: 100% 2px, 3px 100%; pointer-events: none; 
+          z-index: 100; background-size: 100% 2px, 3px 100%; pointer-events: none; 
         }
 
-        .version {
-          position: absolute; bottom: 1.5rem; right: 2rem; font-size: 0.7rem; color: var(--primary); opacity: 0.4;
+        .badge {
+          display: inline-block; padding: 0.2rem 0.6rem; background: var(--primary);
+          color: #000; font-weight: bold; margin-bottom: 1rem; border-radius: 2px;
         }
       </style>
     </head>
     <body>
       <div class="scanlines"></div>
       <div class="container">
+        <div class="pulse"></div>
+        <div class="badge">SECURE_CORE</div>
         <h1>UPLINK_LIVE</h1>
-        <div class="status">FEEDBACK_BOT // STATUS: <span>CONNECTED_</span></div>
-        <div class="terminal-text">
-          Uplink established successfully. Backend systems are synchronized with production infrastructure. 
-          Awaiting mission initiation from dashboard.
+        
+        <div class="status-bar">
+          <div class="status-item">STATUS: <span class="active">ENCRYPTED_</span></div>
+          <div class="status-item">NODE: <span>${process.version}</span></div>
+          <div class="status-item">PORT: <span>${PORT}</span></div>
         </div>
+
+        <div class="terminal" id="terminal">
+          <!-- Logs injected by script -->
+        </div>
+
         <div style="margin-top: 3.5rem; font-size: 0.7rem; color: var(--primary); opacity: 0.4; letter-spacing: 0.2rem;">
-          [ SECURE_CORE_IDENTIFIED_CHACHA0044 ]
+          [ MISSION_CONTROL_AUTHORIZED // ID: CHACHA0044 ]
         </div>
       </div>
-      <div class="version">V2.4.5_STABLE</div>
+
+      <script>
+        const terminal = document.getElementById('terminal');
+        const messages = [
+          "INITIALIZING_UPLINK_PROTOCOLS...",
+          "HANDSHAKING_WITH_IUSMS_PORTAL...",
+          "SESSION_CONTEXT_ESTABLISHED",
+          "BYPASSING_IDLE_TIMEOUTS...",
+          "CALCULATING_ENTROPY_VECTORS...",
+          "HEARTBEAT_STABLE_AT_5000MS",
+          "READY_FOR_COMMAND_INPUT"
+        ];
+
+        function addLog(text) {
+          const line = document.createElement('div');
+          line.className = 'log-line';
+          line.innerHTML = '<span>[' + new Date().toLocaleTimeString() + ']</span> > ' + text;
+          terminal.appendChild(line);
+          if (terminal.childNodes.length > 5) terminal.removeChild(terminal.firstChild);
+        }
+
+        let i = 0;
+        const interval = setInterval(() => {
+          if(i < messages.length) {
+            addLog(messages[i]);
+            i++;
+          } else {
+            addLog("PING: ENTROPY_" + Math.random().toString(36).substring(7).toUpperCase());
+          }
+        }, 3000);
+
+        // Initial logs
+        messages.slice(0, 3).forEach(m => addLog(m));
+      </script>
     </body>
     </html>
   `);
@@ -2534,6 +2595,47 @@ app.post("/api/execute", async (req, res) => {
   });
 });
 
+// ============= KEEP-ALIVE PROTOCOL =============
+// Prevents server from sleeping on platforms like Hugging Face or Render
+app.get("/api/ping", (req, res) => {
+  // Perform random calculations to ensure CPU activity
+  const num1 = Math.floor(Math.random() * 1000);
+  const num2 = Math.floor(Math.random() * 1000);
+  const entropy = Math.sqrt(num1 * num2) + (num1 % (num2 || 1));
+  
+  res.send({ 
+    status: "UPLINK_ACTIVE", 
+    timestamp: new Date().toISOString(),
+    calculation_hash: entropy.toFixed(4),
+    message: "Keep-alive pulse acknowledged." 
+  });
+});
+
+function initiateKeepAlive() {
+  if (IS_LOCAL) return; 
+  
+  const PING_INTERVAL = 5 * 60 * 1000; // 5 minutes
+  const SELF_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+  
+  console.log(`📡 Keep-Alive Protocol Initiated. Target: ${SELF_URL}/api/ping`);
+  
+  setInterval(async () => {
+    try {
+      // Internal random workload before polling
+      const internalWork = Array.from({length: 50}, () => Math.random())
+        .reduce((acc, val) => acc + Math.sin(val), 0);
+        
+      const response = await fetch(`${SELF_URL}/api/ping`).catch(() => null);
+      if (response && response.ok) {
+        const data = await response.json();
+        console.log(`[SYSTEM] Pulse Successful. Entropy: ${internalWork.toFixed(4)} | Hash: ${data.calculation_hash}`);
+      }
+    } catch (e) {
+      // Silent fail to avoid log noise
+    }
+  }, PING_INTERVAL);
+}
+
 // ============= MAIN ENTRY POINT =============
 async function startServer() {
   const colors = {
@@ -2564,6 +2666,7 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`🚀 Production Server running on port ${PORT}`);
       console.log(`📡 Uplink Authorized: ${FRONTEND_URL}`);
+      initiateKeepAlive();
     });
   }
 }

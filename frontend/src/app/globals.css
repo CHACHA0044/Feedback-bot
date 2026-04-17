@@ -79,20 +79,29 @@ main {
 
 /* Futuristic Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--background);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--primary);
   border-radius: 10px;
+  border: 2px solid var(--background);
+  box-shadow: 0 0 10px var(--primary-glow);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+  background: #ffffff;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+}
+
+/* Firefox Support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary) var(--background);
 }
 
 /* Animations */

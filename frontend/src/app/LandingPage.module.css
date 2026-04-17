@@ -96,8 +96,8 @@
 .howItWorks {
   width: 100%;
   max-width: 1000px;
-  padding: 4rem 2rem;
-  margin-top: 4rem;
+  padding: 2rem 2rem 4rem;
+  margin-top: 0;
 }
 
 .sectionTitle {
@@ -114,15 +114,56 @@
   width: 100%;
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: 0 0 50px rgba(0, 243, 255, 0.1);
-  border: 1px solid var(--border);
+  box-shadow: 0 0 50px rgba(255, 215, 0, 0.1);
+  border: 1px solid var(--primary);
   background: #0a0a0a;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.videoContainer:hover {
+  box-shadow: 0 0 60px rgba(255, 215, 0, 0.2);
+  border-color: #fff;
 }
 
 .videoContainer iframe {
   width: 100%;
   height: 100%;
   border: none;
+}
+
+.videoSwitcher {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.switchBtn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+  padding: 0.6rem 1.5rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: var(--font-space-grotesk);
+}
+
+.switchBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--foreground);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.activeSwitch {
+  background: rgba(255, 215, 0, 0.15) !important;
+  color: var(--primary) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.2);
 }
 
 .featuresGrid {
@@ -289,13 +330,13 @@
 
 .modalContent {
   background: #0a0a0a;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--primary);
   border-radius: 20px;
   padding: 3rem;
   max-width: 600px;
   width: 100%;
   position: relative;
-  box-shadow: 0 0 100px rgba(255, 215, 0, 0.1);
+  box-shadow: 0 0 80px rgba(255, 215, 0, 0.15), inset 0 0 20px rgba(255, 215, 0, 0.05);
   animation: modalEnter 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
@@ -320,11 +361,16 @@
   color: var(--muted);
   font-size: 1.5rem;
   cursor: pointer;
-  transition: color 0.3s;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .closeBtn:hover {
   color: #fff;
+  transform: rotate(90deg) scale(1.1);
+}
+
+.closeBtn:active {
+  transform: rotate(180deg) scale(0.9);
 }
 
 .dot {
