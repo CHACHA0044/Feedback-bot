@@ -1589,33 +1589,33 @@ export default function OpPage() {
                             </button>
                           )
                         )}
+
+                        {step === 'executing' && !hasContinued && !isKilled &&
+                          !currentStatus.includes('Theory') &&
+                          !currentStatus.includes('Lab') &&
+                          !currentStatus.includes('Mentor') &&
+                          !currentStatus.includes('Teaching') && (
+                            <button
+                              onClick={() => setSpecificsModalOpen(true)}
+                              className={styles.commandDeckButton}
+                              style={{
+                                borderColor: '#00d2ff',
+                                color: '#00d2ff',
+                                textShadow: '0 0 10px rgba(0, 210, 255, 0.3)'
+                              }}
+                            >
+                              / SPECIFICS
+                            </button>
+                          )}
                       </>
                     )}
-                    {step === 'executing' && !hasContinued && !isKilled &&
-                      !currentStatus.includes('Theory') &&
-                      !currentStatus.includes('Lab') &&
-                      !currentStatus.includes('Mentor') &&
-                      !currentStatus.includes('Teaching') && (
-                        <button
-                          onClick={() => setSpecificsModalOpen(true)}
-                          className={styles.commandDeckButton}
-                          style={{
-                            borderColor: '#00d2ff',
-                            color: '#00d2ff',
-                            textShadow: '0 0 10px rgba(0, 210, 255, 0.3)',
-                            display: hasContinued ? 'none' : 'block'
-                          }}
-                        >
-                          / SPECIFICS
-                        </button>
-                      )}
+
                     <button
                       onClick={handleKill}
                       className={`${styles.commandDeckButton} ${styles.commandDeckKill}`}
                     >
                       ⏹ Kill Task
                     </button>
-
                   </div>
                 </motion.div>
               )}

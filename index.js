@@ -2381,7 +2381,7 @@ async function run(inputConfig = {}, ip = 'local') {
     [x] Failed: ${ stats.totalFailed }
     [>>] Skipped: ${ stats.totalSkipped }
     [!] Duplicates: ${ stats.duplicateAttempts.length }
-  Total Processed: ${ stats.totalSubmissions + stats.totalFailed + stats.totalSkipped }
+  Total Processed: ${ stats.totalSubmissions + stats.totalFailed + stats.totalSkipped + stats.duplicateAttempts.length }
 
   BREAKDOWN BY CATEGORY:
   .Theory         : ${ theoryList.length } configured
@@ -2660,19 +2660,33 @@ app.post("/api/portal-logout", async (req, res) => {
     log.info(`[LOGOUT] Initiating portal logout for session ${ip}...`);
     broadcast(ip, { type: 'status_update', msg: 'LOGOUT: Initiating Protocol' });
 
-    // 1. Click the collapse arrow to show logout option
-    await page.click('.glyphicon-collapse-down').catch(() => {
-      // If direct click fails, try clicking the parent button
-      return page.click('button.dropbtn');
-    });
+    // 1. Trigger the dropdown (both hover and click for maximum compatibility)
+    await page.hover('.dropdown').catch(() => null);
+    await page.click('button.dropbtn').catch(() => page.click('.glyphicon-collapse-down'));
 
-    // 2. Wait for logout link to appear and click it
+    // 2. Wait for logout link to appear
     const logoutSelector = 'a[href*="logout.aspx"]';
+    
+    // Fallback: If not visible after hover/click, try to force display via CSS
+    await page.evaluate(() => {
+      const content = document.querySelector('.dropdown-content');
+      if (content) content.style.display = 'block';
+    }).catch(() => null);
+
     await page.waitForSelector(logoutSelector, { visible: true, timeout: 5000 });
     
-    // Some visual feedback before clicking
-    await delay(500);
-    await page.click(logoutSelector);
+    await delay(800);
+    
+    // 3. Perform the logout click
+    await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (el) {
+        el.click();
+      } else {
+        // Absolute fallback: direct navigation if the element is missing from DOM
+        window.location.href = '../logout.aspx';
+      }
+    }, logoutSelector);
 
     // 3. Wait for navigation to the welcome page
     await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => null);
