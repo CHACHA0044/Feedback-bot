@@ -1628,6 +1628,7 @@
   color: var(--primary);
   font-family: var(--font-robotic);
   letter-spacing: 2px;
+  pointer-events: none;
 }
 
 .loaderLine {
@@ -1651,4 +1652,15 @@
 @keyframes load {
   0% { left: -100%; }
   100% { left: 100%; }
+}
+
+.commandDeckLogout {
+  border-color: #00d2ff !important;
+  color: #00d2ff !important;
+  background: rgba(0, 210, 255, 0.05) !important;
+}
+
+.commandDeckLogout:hover {
+  background: rgba(0, 210, 255, 0.15) !important;
+  box-shadow: 0 0 15px rgba(0, 210, 255, 0.3) !important;
 }

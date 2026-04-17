@@ -610,6 +610,22 @@ export default function OpPage() {
     }
   };
 
+  const handlePortalLogout = async () => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    try {
+      addLog("LOGOUT_SEQUENCE_INITIATED", "info");
+      await fetch(`${backendUrl}/api/portal-logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        }
+      });
+    } catch (err) {
+      addLog("Logout protocol failed.", "error");
+    }
+  };
+
   const handleExecuteSpecific = async (category: string, subject?: string, teacher?: string) => {
     setIsExecutingSpecific(true);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
@@ -1510,47 +1526,50 @@ export default function OpPage() {
                       </button>
                     )}
                     {showReportButton ? (
-                      <button
-                        onClick={async () => {
-                          addLog("Commencing final synchronization...", "action");
-
-                          // Signal backend to close browser/tabs
-                          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-                          try {
-                            await fetch(`${backendUrl}/api/logout`, {
-                              method: 'POST',
-                              headers: { 'x-session-id': sessionId }
-                            });
-                            addLog("Remote viewport severed successfully.", "success");
-                          } catch (e) {
-                            addLog("Warning: Could not terminate remote session gracefully.", "error");
-                          }
-
-                          addLog("Initiating CRT shutdown sequence...", "action");
-                          addLog("MISSION_STATUS: Objective complete. System standing down.", "success");
-
-                          // Step 1: Fade out UI elements inside CRT
-                          setCrtState('off');
-
-                          // Step 2: Allow animation to breathe
-                          await delay(2800);
-
-                          // Step 3: Final state transition
-                          setStep('done');
-                          clearRunState('completed');
-                          closeStream();
-                        }}
-                        className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive} animate-pulse`}
-                        style={{
-                          background: 'rgba(0, 255, 0, 0.1)',
-                          borderColor: '#00ff00',
-                          color: '#00ff00',
-                          padding: '0.6rem 2rem',
-                          fontSize: '0.5rem'
-                        }}
-                      >
-                        ~ REPORT
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          onClick={async () => {
+                            addLog("Commencing final synchronization...", "action");
+                            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+                            try {
+                              await fetch(`${backendUrl}/api/logout`, {
+                                method: 'POST',
+                                headers: { 'x-session-id': sessionId }
+                              });
+                              addLog("Remote viewport severed successfully.", "success");
+                            } catch (e) {
+                              addLog("Warning: Could not terminate remote session gracefully.", "error");
+                            }
+                            addLog("Initiating CRT shutdown sequence...", "action");
+                            addLog("MISSION_STATUS: Objective complete. System standing down.", "success");
+                            setCrtState('off');
+                            await delay(2800);
+                            setStep('done');
+                            clearRunState('completed');
+                            closeStream();
+                          }}
+                          className={`${styles.commandDeckButton} ${styles.commandDeckButtonActive} animate-pulse`}
+                          style={{
+                            background: 'rgba(0, 255, 0, 0.1)',
+                            borderColor: '#00ff00',
+                            color: '#00ff00',
+                            padding: '0.6rem 2rem',
+                            fontSize: '0.5rem'
+                          }}
+                        >
+                          ~ REPORT
+                        </button>
+                        <button
+                          onClick={handlePortalLogout}
+                          className={`${styles.commandDeckButton} ${styles.commandDeckLogout}`}
+                          style={{
+                            padding: '0.6rem 2rem',
+                            fontSize: '0.5rem'
+                          }}
+                        >
+                          ➲ LOGOUT
+                        </button>
+                      </div>
                     ) : (
                       <>
                         {!isCaptchaRequired && (
@@ -1583,7 +1602,8 @@ export default function OpPage() {
                           style={{
                             borderColor: '#00d2ff',
                             color: '#00d2ff',
-                            textShadow: '0 0 10px rgba(0, 210, 255, 0.3)'
+                            textShadow: '0 0 10px rgba(0, 210, 255, 0.3)',
+                            display: hasContinued ? 'none' : 'block'
                           }}
                         >
                           / SPECIFICS

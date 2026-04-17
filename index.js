@@ -2391,6 +2391,8 @@ async function run(inputConfig = {}, ip = 'local') {
   ${ "=".repeat(70) }
     `);
 
+  const specifics = session?.specifics;
+  
   broadcast(ip, {
     type: 'run_complete_summary',
     data: {
@@ -2401,11 +2403,12 @@ async function run(inputConfig = {}, ip = 'local') {
       duration: formatDuration(duration),
       startTime: startTimestamp,
       endTime: endTimestamp,
+      specificsTarget: specifics ? (specifics.subject || specifics.category) : null,
       breakdown: {
-        theory: theoryList.length,
-        lab: labList.length,
-        mentor: mentorDept && mentorName ? 1 : 0,
-        teaching: teachingList.length
+        theory: specifics && specifics.category === 'Theory' ? 1 : theoryList.length,
+        lab: specifics && specifics.category === 'Lab' ? 1 : labList.length,
+        mentor: specifics && specifics.category === 'Mentor' ? 1 : (mentorDept && mentorName ? 1 : 0),
+        teaching: specifics && specifics.category === 'Teaching' ? 1 : teachingList.length
       },
       skippedItems: stats.skippedItems,
       duplicateItems: stats.duplicateAttempts
@@ -2644,6 +2647,45 @@ app.post("/api/specifics", async (req, res) => {
   
   log.info(`[SPECIFICS] Target locked for session ${ ip }: ${ category } - ${ subject || teacher || 'General' } `);
   res.send({ status: "success", message: "Specific target locked." });
+});
+
+app.post("/api/portal-logout", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const session = getOrCreateSession(ip);
+  const page = session.activePage;
+
+  if (!page) {
+    return res.status(400).send({ status: "error", message: "No active browser session found." });
+  }
+
+  try {
+    log.info(`[LOGOUT] Initiating portal logout for session ${ip}...`);
+    broadcast(ip, { type: 'status_update', msg: 'LOGOUT: Initiating Protocol' });
+
+    // 1. Click the collapse arrow to show logout option
+    await page.click('.glyphicon-collapse-down').catch(() => {
+      // If direct click fails, try clicking the parent button
+      return page.click('button.dropbtn');
+    });
+
+    // 2. Wait for logout link to appear and click it
+    const logoutSelector = 'a[href*="logout.aspx"]';
+    await page.waitForSelector(logoutSelector, { visible: true, timeout: 5000 });
+    
+    // Some visual feedback before clicking
+    await delay(500);
+    await page.click(logoutSelector);
+
+    // 3. Wait for navigation to the welcome page
+    await page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => null);
+
+    log.success(`[LOGOUT] Session ${ip} logged out successfully.`);
+    broadcast(ip, { type: 'status_update', msg: 'LOGOUT_COMPLETE: Session Terminated' });
+    res.send({ status: "success", message: "Logged out successfully." });
+  } catch (err) {
+    log.error(`[LOGOUT_ERROR] ${err.message}`);
+    res.status(500).send({ status: "error", message: err.message });
+  }
 });
 
 // ============= KEEP-ALIVE PROTOCOL =============
