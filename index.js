@@ -2391,8 +2391,6 @@ async function run(inputConfig = {}, ip = 'local') {
   ${ "=".repeat(70) }
     `);
 
-  const specifics = session?.specifics;
-  
   broadcast(ip, {
     type: 'run_complete_summary',
     data: {
