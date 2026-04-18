@@ -96,6 +96,7 @@ export default function OpPage() {
   const [statusNotif, setStatusNotif] = useState<{ msg: string, type: 'info' | 'success' | 'error' } | null>(null);
   const [isZoomed, setIsZoomed] = useState(false);
   const crosshairRef = useRef<HTMLDivElement>(null);
+  const [isHoveringBrowser, setIsHoveringBrowser] = useState(false);
   const [isSendingPreset, setIsSendingPreset] = useState(false);
   const [isInvalidEmail, setIsInvalidEmail] = useState(false);
   const [requestEmail, setRequestEmail] = useState("");
