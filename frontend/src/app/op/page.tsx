@@ -259,7 +259,7 @@ export default function OpPage() {
 
     // If still pending, show the sticky process pill
     if (!isRequestFinished) {
-      showNotif("TRANSMITTING: IN_PROCESS. DO_NOT_CLOSE_WINDOW...", "info", true);
+      showNotif("Transmission: In Process. Do not close window", "info", true);
     } else {
       // If already finished within 2s, show result now
       finalizeUI();
@@ -1414,7 +1414,7 @@ export default function OpPage() {
                       onClick={handleSendPresetRequest}
                       disabled={isSendingPreset}
                     >
-                      {isSendingPreset ? "TRANSMITTING..." : "SUBMIT REQUEST"}
+                      {isSendingPreset ? "Transmission..." : "Submit Request"}
                     </button>
                   </div>
                 </motion.div>
@@ -1714,7 +1714,7 @@ export default function OpPage() {
           <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
             <button
               className="btn-primary"
-              style={{ padding: '0.8rem 3rem', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '2px' }}
+              style={{ padding: '0.8rem 3rem', opacity: 0.9, fontSize: '0.8rem', fontWeight: 500, letterSpacing: '0.5px' }}
               onClick={() => {
                 closeStream();
                 clearRunState('returned to config');
