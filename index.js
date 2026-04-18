@@ -2746,9 +2746,9 @@ app.post("/api/portal-logout", async (req, res) => {
     await page.evaluate(() => {
       const menus = document.querySelectorAll('.dropdown-content, .dropdown-menu, .user-footer');
       menus.forEach(m => {
-        (m as HTMLElement).style.display = 'block';
-        (m as HTMLElement).style.visibility = 'visible';
-        (m as HTMLElement).style.opacity = '1';
+        m.style.display = 'block';
+        m.style.visibility = 'visible';
+        m.style.opacity = '1';
       });
     }).catch(() => null);
 
@@ -2756,7 +2756,7 @@ app.post("/api/portal-logout", async (req, res) => {
 
     // 3. Perform the logout click or forced redirect
     await page.evaluate((sel) => {
-      const el = document.querySelector(sel) as HTMLElement;
+      const el = document.querySelector(sel);
       if (el) {
         el.click();
       } else {

@@ -206,7 +206,6 @@ export default function OpPage() {
     }
 
     setIsSendingPreset(true);
-    setIsSendingPreset(true);
     setPresetModalOpen(false);
     showNotif("TRANSMITTING: IN_PROCESS. DO_NOT_CLOSE_WINDOW...", "info", true);
 
@@ -860,6 +859,31 @@ export default function OpPage() {
       setIsPaused(!paused); // Rollback on failure
       console.error("Pause failed");
     }
+  };
+
+  const handlePortalLogout = async () => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    addLog("LOGOUT_SEQUENCE_INITIATED", "action");
+    try {
+      await fetch(`${backendUrl}/api/portal-logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId
+        }
+      });
+      addLog("LOGOUT_COMPLETE: Mission Finished.", "success");
+    } catch (err) {
+      addLog("LOGOUT_FAILED: Force-closing session...", "error");
+    }
+    
+    // Force CRT shutdown and final state regardless of server result
+    addLog("SESSION_FINISHED", "info");
+    setCrtState('off');
+    await delay(2500);
+    setStep('done');
+    clearRunState('logged out');
+    closeStream();
   };
 
   const handleLogout = async () => {
