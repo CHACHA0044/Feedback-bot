@@ -103,7 +103,7 @@ export default function OpPage() {
   const [hasContinued, setHasContinued] = useState(false);
   const [selectedSpecCategory, setSelectedSpecCategory] = useState<string | null>(null);
   const [isExecutingSpecific, setIsExecutingSpecific] = useState(false);
-  const [sessionId] = useState(() => {
+  const [sessionId, setSessionId] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('SESSION_ID');
       if (saved) return saved;
@@ -131,6 +131,12 @@ export default function OpPage() {
     setStatusNotif({ msg, type });
     setTimeout(() => setStatusNotif(null), 3500);
   };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('SESSION_ID', sessionId);
+    }
+  }, [sessionId]);
 
   // Initial restoration effect (fixes hydration)
   useEffect(() => {
