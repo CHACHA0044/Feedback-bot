@@ -1408,7 +1408,7 @@ export default function OpPage() {
                       />
                     </div>
                     <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '1rem', lineHeight: '1.4' }}>
-                      <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>Note:</span> There are some issues with the mail delivery system. <span style={{ color: 'var(--primary)', fontWeight: 500 }}>Please</span> send it manually via{' '}
+                      <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>Note:</span> There are some issues with the mail delivery system. <span style={{ color: 'var(--primary)', fontWeight: 500 }}>Please</span> send it manually {' '}
                       <a 
                         href="https://mail.google.com/mail/?view=cm&fs=1&to=pdembla@student.iul.ac.in&su=New%20Preset%20Request" 
                         target="_blank"
