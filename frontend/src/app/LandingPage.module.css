@@ -131,6 +131,17 @@
   border: none;
 }
 
+@media (max-width: 768px) {
+  .howItWorks {
+    padding: 1.5rem 1rem 3rem;
+  }
+  .videoContainer {
+    aspect-ratio: 16/9;
+    border-radius: 12px;
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.15);
+  }
+}
+
 .videoSwitcher {
   display: flex;
   justify-content: center;

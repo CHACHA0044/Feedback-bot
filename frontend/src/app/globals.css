@@ -68,6 +68,20 @@ body {
   scroll-behavior: smooth;
 }
 
+body.no-scroll {
+  overflow: hidden !important;
+}
+
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
+  * {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+  }
+}
+
 a {
   color: inherit;
   text-decoration: none;

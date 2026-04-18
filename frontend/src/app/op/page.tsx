@@ -125,15 +125,18 @@ export default function OpPage() {
 
   // Initial restoration effect (fixes hydration)
   useEffect(() => {
-    // Restore Form Data
+    // Restore Form Data (EXCEPT credentials)
     try {
       const savedConfig = localStorage.getItem(CONFIG_STORAGE_KEY);
       if (savedConfig) {
-        setFormData(prev => ({ ...prev, ...JSON.parse(savedConfig) }));
+        const parsed = JSON.parse(savedConfig);
+        delete parsed.studentId;
+        delete parsed.password;
+        setFormData(prev => ({ ...prev, ...parsed }));
       }
     } catch (_) { }
 
-    // Restore Run State
+    // Restore Run State (EXCEPT credentials)
     try {
       const savedRun = sessionStorage.getItem(RUN_STORAGE_KEY);
       if (savedRun) {
@@ -271,7 +274,10 @@ export default function OpPage() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(formData));
+    const configToSave = { ...formData };
+    delete configToSave.studentId;
+    delete configToSave.password;
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configToSave));
   }, [formData]);
 
   useEffect(() => {
@@ -281,6 +287,10 @@ export default function OpPage() {
   }, [logs]);
 
   const persistRunState = useCallback((reason: string) => {
+    const runFormData = { ...formData };
+    delete runFormData.studentId;
+    delete runFormData.password;
+
     const payload = {
       step,
       progress,
@@ -288,7 +298,7 @@ export default function OpPage() {
       isKilled,
       currentStatus,
       runProgressState,
-      formData,
+      formData: runFormData,
       logs: logs.slice(-100)
     };
     sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(payload));
@@ -469,6 +479,10 @@ export default function OpPage() {
 
   useEffect(() => {
     if (step !== 'executing') return;
+    const runFormData = { ...formData };
+    delete runFormData.studentId;
+    delete runFormData.password;
+
     const payload = {
       step,
       progress,
@@ -476,7 +490,7 @@ export default function OpPage() {
       isKilled,
       currentStatus,
       runProgressState,
-      formData,
+      formData: runFormData,
       logs: logs.slice(-100)
     };
     sessionStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(payload));
@@ -793,6 +807,16 @@ export default function OpPage() {
       closeStream();
     };
   }, [closeStream]);
+
+  // Toggle no-scroll class on body
+  useEffect(() => {
+    if (step === 'executing') {
+      document.body.classList.add('no-scroll');
+    } else {
+      document.body.classList.remove('no-scroll');
+    }
+    return () => document.body.classList.remove('no-scroll');
+  }, [step]);
 
   const setProtocolPaused = async (paused: boolean) => {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';

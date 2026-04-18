@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import readline from "readline";
 import cors from "cors";
 import { AsyncLocalStorage } from "async_hooks";
+import nodemailer from "nodemailer";
 
 const app = express();
 const sessionContext = new AsyncLocalStorage();
@@ -1919,7 +1920,7 @@ async function run(inputConfig = {}, ip = 'local') {
     log.time(`Start Time: ${startTimestamp}`);
     log.info("Configuration loaded successfully");
     log.detail(`Mode: ${IS_LOCAL ? 'LOCAL (Testing)' : 'PRODUCTION (Live Site)'}`);
-    log.detail(`Username: ${enrollmentNo || 'N/A'}`);
+    log.detail(`Identity Locked [SCRUBBED]`);
     log.detail(`Feedback Option: ${feedbackOption}`);
     log.detail(`Theory Subjects: ${theoryList.length}`);
     log.detail(`Lab Subjects: ${labList.length}`);
@@ -2543,17 +2544,44 @@ app.post("/api/request-preset", async (req, res) => {
   
   await sessionContext.run(ip, async () => {
     log.section("📬 PRESET REQUEST RECEIVED");
-    log.info(`From: ${ email } `);
-    log.detail(`Details: ${ message } `);
+    log.info(`From: ${email}`);
+    log.detail(`Details: ${message}`);
     
-    // In a real scenario, this would send an actual email via nodemailer
-    // For now, we log it to the backend and return success
+    // Scrub credentials from configData before sending/logging
+    const scrubbedConfig = { ...configData };
+    delete scrubbedConfig.studentId;
+    delete scrubbedConfig.password;
+
     console.log("-----------------------------------------");
-    console.log(`NEW PRESET REQUEST[${ new Date().toISOString() }]`);
-    console.log(`USER EMAIL: ${ email } `);
-    console.log(`MESSAGE: ${ message } `);
-    console.log(`PROVIDED CONFIG: \n${ JSON.stringify(configData, null, 2) } `);
+    console.log(`NEW PRESET REQUEST [${new Date().toISOString()}]`);
+    console.log(`USER EMAIL: ${email}`);
+    console.log(`MESSAGE: ${message}`);
+    console.log(`PROVIDED CONFIG (SCRUBBED): \n${JSON.stringify(scrubbedConfig, null, 2)}`);
     console.log("-----------------------------------------");
+
+    const MAIL_USER = process.env.MAIL_USER;
+    const MAIL_PASS = process.env.MAIL_PASS;
+
+    if (MAIL_USER && MAIL_PASS) {
+      try {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: { user: MAIL_USER, pass: MAIL_PASS }
+        });
+
+        await transporter.sendMail({
+          from: `"Feedback Bot" <${MAIL_USER}>`,
+          to: "pdembla@student.iul.ac.in",
+          subject: `New Preset Request from ${email}`,
+          text: `Message: ${message}\n\nConfig Data:\n${JSON.stringify(scrubbedConfig, null, 2)}`
+        });
+        log.success("Email notification transmitted to Mission Control.");
+      } catch (err) {
+        log.error(`Mail delivery failed: ${err.message}`);
+      }
+    } else {
+      log.warning("MAIL_USER or MAIL_PASS missing. Notification logged to console only.");
+    }
 
     res.send({ status: "success", message: "Request transmitted to Mission Control support." });
   });
@@ -2582,6 +2610,12 @@ app.get("/api/stream", (req, res) => {
     session.sseClients = session.sseClients.filter(c => c.id !== clientId);
     sessionContext.run(ip, () => {
       log.info(`Remote client disconnected[${ clientId }]`);
+      
+      // If mobile user disconnects, cleanup session memory
+      if (session.isMobile) {
+        log.info(`Mobile client severed connection. Flushing session ${ip}...`);
+        cleanupSession(ip, "Mobile tab closed");
+      }
     });
   });
 });
@@ -2660,23 +2694,40 @@ app.post("/api/portal-logout", async (req, res) => {
     log.info(`[LOGOUT] Initiating portal logout for session ${ip}...`);
     broadcast(ip, { type: 'status_update', msg: 'LOGOUT: Initiating Protocol' });
 
-    // 1. Trigger the dropdown (both hover and click for maximum compatibility)
-    await page.hover('.dropdown').catch(() => null);
-    await page.click('button.dropbtn').catch(() => page.click('.glyphicon-collapse-down'));
+    // PC Flow: Hover over name/profile to reveal logout
+    const hoverTargets = [
+      '.dropdown', 
+      '#userName', 
+      'span[id*="lblStudentName"]',
+      '.glyphicon-user',
+      'a[href*="logout"]'
+    ];
+
+    for (const target of hoverTargets) {
+      try {
+        await page.hover(target);
+        await delay(300);
+      } catch (_) {}
+    }
+    
+    // Explicitly click the trigger if hover isn't enough
+    await page.click('button.dropbtn').catch(() => page.click('.glyphicon-collapse-down')).catch(() => null);
 
     // 2. Wait for logout link to appear
     const logoutSelector = 'a[href*="logout.aspx"]';
     
     // Fallback: If not visible after hover/click, try to force display via CSS
     await page.evaluate(() => {
-      const content = document.querySelector('.dropdown-content');
-      if (content) content.style.display = 'block';
+      const content = document.querySelector('.dropdown-content') || document.querySelector('.dropdown-menu');
+      if (content) {
+        content.style.display = 'block';
+        content.style.visibility = 'visible';
+        content.style.opacity = '1';
+      }
     }).catch(() => null);
 
-    await page.waitForSelector(logoutSelector, { visible: true, timeout: 5000 });
-    
-    await delay(800);
-    
+    await page.waitForSelector(logoutSelector, { visible: true, timeout: 3000 }).catch(() => null);
+
     // 3. Perform the logout click
     await page.evaluate((sel) => {
       const el = document.querySelector(sel);
@@ -2684,7 +2735,8 @@ app.post("/api/portal-logout", async (req, res) => {
         el.click();
       } else {
         // Absolute fallback: direct navigation if the element is missing from DOM
-        window.location.href = '../logout.aspx';
+        const origin = window.location.origin;
+        window.location.href = origin + '/Student/logout.aspx';
       }
     }, logoutSelector);
 
