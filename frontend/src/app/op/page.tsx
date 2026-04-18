@@ -206,36 +206,63 @@ export default function OpPage() {
     }
 
     setIsSendingPreset(true);
-    
-    // Hold modal open for 2 seconds with "TRANSMITTING..." button state
-    await new Promise(res => setTimeout(res, 2000));
-
-    setPresetModalOpen(false);
-    showNotif("TRANSMITTING: IN_PROCESS. DO_NOT_CLOSE_WINDOW...", "info", true);
+    const startTime = Date.now();
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    try {
-      const response = await fetch(`${backendUrl}/api/request-preset`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-session-id': sessionId 
-        },
-        body: JSON.stringify({ email: requestEmail, message: presetMessage })
-      });
-      
+    
+    let isRequestFinished = false;
+    let requestResult: { ok: boolean; msg: string } | null = null;
+
+    const performRequest = async () => {
+      try {
+        const response = await fetch(`${backendUrl}/api/request-preset`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-session-id': sessionId 
+          },
+          body: JSON.stringify({ email: requestEmail, message: presetMessage })
+        });
+        const data = await response.json();
+        requestResult = { ok: response.ok, msg: data.message || (response.ok ? "" : "Server error") };
+      } catch (err) {
+        requestResult = { ok: false, msg: "Network error" };
+      } finally {
+        isRequestFinished = true;
+        // If 2s have already passed, the modal is closed and we should show the result now
+        if (Date.now() - startTime >= 2000) {
+          finalizeUI();
+        }
+      }
+    };
+
+    const finalizeUI = () => {
+      if (!requestResult) return;
       setStatusNotif(null); // Clear sticky
-      if (response.ok) {
+      if (requestResult.ok) {
         showNotif("Request transmitted successfully.", "success");
         setPresetMessage("");
       } else {
-        showNotif("Transmission failed. Server error.", "error");
+        showNotif(requestResult.msg, "error");
       }
-    } catch (err) {
-      setStatusNotif(null); // Clear sticky
-      showNotif("Transmission failed. Network error.", "error");
-    } finally {
       setIsSendingPreset(false);
+    };
+
+    // Trigger request in background
+    void performRequest();
+
+    // Wait for the 2s transmitting state in the modal
+    await new Promise(res => setTimeout(res, 2000));
+
+    // Close modal
+    setPresetModalOpen(false);
+
+    // If still pending, show the sticky process pill
+    if (!isRequestFinished) {
+      showNotif("TRANSMITTING: IN_PROCESS. DO_NOT_CLOSE_WINDOW...", "info", true);
+    } else {
+      // If already finished within 2s, show result now
+      finalizeUI();
     }
   };
 

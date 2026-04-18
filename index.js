@@ -2568,24 +2568,23 @@ app.post("/api/request-preset", async (req, res) => {
 
     if (MAIL_USER && MAIL_PASS) {
       console.log(`[MAIL] Attempting to transmit preset request from ${email}...`);
+      let mailStatus = { success: false, error: null };
       try {
         const transporter = nodemailer.createTransport({
           host: 'smtp.gmail.com',
           port: 465,
           secure: true, 
           auth: { user: MAIL_USER, pass: MAIL_PASS },
-          connectionTimeout: 20000, // 20 seconds
+          connectionTimeout: 20000,
           greetingTimeout: 20000,
           socketTimeout: 20000,
-          tls: {
-            rejectUnauthorized: false
-          }
+          tls: { rejectUnauthorized: false }
         });
 
-        // Verify transporter connection with extended timeout
-        const verifyPromise = transporter.verify();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("SMTP Verification Timeout (20s)")), 20000));
-        await Promise.race([verifyPromise, timeoutPromise]);
+        await Promise.race([
+          transporter.verify(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("SMTP Verification Timeout (20s)")), 20000))
+        ]);
         
         console.log("[MAIL] SMTP Uplink Verified ✓");
 
@@ -2598,16 +2597,23 @@ app.post("/api/request-preset", async (req, res) => {
 
         console.log(`[MAIL] Success: Transmission ID ${info.messageId}`);
         log.success("Email notification transmitted to Mission Control.");
+        mailStatus.success = true;
       } catch (err) {
         console.error(`[MAIL] CRITICAL ERROR: ${err.message}`);
         log.error(`Mail delivery failed: ${err.message}`);
+        mailStatus.error = err.message;
+      }
+
+      if (mailStatus.success) {
+        res.send({ status: "success", message: "Request transmitted to Mission Control support." });
+      } else {
+        res.status(500).send({ status: "error", message: `Mail delivery failed: ${mailStatus.error}` });
       }
     } else {
-      console.log("[MAIL] Skipping transmission: MAIL_USER or MAIL_PASS not configured in environment.");
-      log.warning("MAIL_USER or MAIL_PASS missing. Notification logged to console only.");
+      console.log("[MAIL] Skipping transmission: MAIL_USER or MAIL_PASS not configured.");
+      log.warning("MAIL_USER or MAIL_PASS missing.");
+      res.status(500).send({ status: "error", message: "Mail server not configured." });
     }
-
-    res.send({ status: "success", message: "Request transmitted to Mission Control support." });
   });
 });
 
