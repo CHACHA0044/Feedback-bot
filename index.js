@@ -2571,17 +2571,20 @@ app.post("/api/request-preset", async (req, res) => {
       try {
         const transporter = nodemailer.createTransport({
           host: 'smtp.gmail.com',
-          port: 587,
-          secure: false, // true for 465, false for other ports
+          port: 465,
+          secure: true, 
           auth: { user: MAIL_USER, pass: MAIL_PASS },
+          connectionTimeout: 20000, // 20 seconds
+          greetingTimeout: 20000,
+          socketTimeout: 20000,
           tls: {
             rejectUnauthorized: false
           }
         });
 
-        // Verify transporter connection with timeout
+        // Verify transporter connection with extended timeout
         const verifyPromise = transporter.verify();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("SMTP Verification Timeout")), 10000));
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("SMTP Verification Timeout (20s)")), 20000));
         await Promise.race([verifyPromise, timeoutPromise]);
         
         console.log("[MAIL] SMTP Uplink Verified ✓");
