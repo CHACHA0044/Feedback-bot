@@ -2572,8 +2572,8 @@ app.post("/api/request-preset", async (req, res) => {
       try {
         const transporter = nodemailer.createTransport({
           host: 'smtp.gmail.com',
-          port: 587,
-          secure: false, // true for 465, false for other ports
+          port: 2525,
+          secure: false, 
           auth: { user: MAIL_USER, pass: MAIL_PASS },
           connectionTimeout: 20000,
           greetingTimeout: 20000,
