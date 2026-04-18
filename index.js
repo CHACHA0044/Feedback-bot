@@ -2797,9 +2797,16 @@ function initiateKeepAlive() {
   if (IS_LOCAL) return; 
   
   const PING_INTERVAL = 5 * 60 * 1000; // 5 minutes
-  const SELF_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+  
+  // Attempt to auto-detect public URL on Hugging Face
+  let SELF_URL = process.env.BACKEND_URL;
+  if (!SELF_URL && process.env.SPACE_ID) {
+    const [user, space] = process.env.SPACE_ID.split('/');
+    SELF_URL = `https://${user}-${space.replace(/_/g, '-')}.hf.space`;
+  }
+  if (!SELF_URL) SELF_URL = `http://localhost:${PORT}`;
 
-    console.log(`📡 Keep-Alive Protocol Initiated. Target: ${SELF_URL}/api/ping`);
+  console.log(`📡 Keep-Alive Protocol Initiated. Target: ${SELF_URL}/api/ping`);
 
     setInterval(async () => {
       try {
