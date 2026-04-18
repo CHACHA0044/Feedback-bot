@@ -1946,11 +1946,15 @@ async function run(inputConfig = {}, ip = 'local') {
         '--single-process'
       ],
       defaultViewport: isMobile
-        ? { width: 375, height: 667, isMobile: true, hasTouch: true }
+        ? { width: 375, height: 812, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
         : (IS_LOCAL ? null : { width: 1280, height: 800 })
     });
 
     const page = await browser.newPage();
+    
+    if (isMobile) {
+      await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
+    }
 
     // Set login URL based on environment
     let loginUrl;
@@ -2567,16 +2571,19 @@ app.post("/api/request-preset", async (req, res) => {
       try {
         const transporter = nodemailer.createTransport({
           host: 'smtp.gmail.com',
-          port: 465,
-          secure: true, // true for 465, false for other ports
+          port: 587,
+          secure: false, // true for 465, false for other ports
           auth: { user: MAIL_USER, pass: MAIL_PASS },
           tls: {
             rejectUnauthorized: false
           }
         });
 
-        // Verify transporter connection
-        await transporter.verify();
+        // Verify transporter connection with timeout
+        const verifyPromise = transporter.verify();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("SMTP Verification Timeout")), 10000));
+        await Promise.race([verifyPromise, timeoutPromise]);
+        
         console.log("[MAIL] SMTP Uplink Verified ✓");
 
         const info = await transporter.sendMail({
@@ -2714,41 +2721,45 @@ app.post("/api/portal-logout", async (req, res) => {
       '#userName', 
       'span[id*="lblStudentName"]',
       '.glyphicon-user',
-      'a[href*="logout"]'
+      'a[href*="logout"]',
+      'li.user-header',
+      '.user-panel'
     ];
 
     for (const target of hoverTargets) {
       try {
-        await page.hover(target);
-        await delay(300);
+        await page.hover(target).catch(() => null);
+        await delay(200);
       } catch (_) {}
     }
     
-    // Explicitly click the trigger if hover isn't enough
-    await page.click('button.dropbtn').catch(() => page.click('.glyphicon-collapse-down')).catch(() => null);
+    // Brute force clicks on any potential logout triggers
+    const triggers = ['button.dropbtn', '.glyphicon-collapse-down', '.dropdown-toggle', 'a[data-toggle="dropdown"]'];
+    for (const sel of triggers) {
+      await page.click(sel).catch(() => null);
+    }
 
     // 2. Wait for logout link to appear
     const logoutSelector = 'a[href*="logout.aspx"]';
     
-    // Fallback: If not visible after hover/click, try to force display via CSS
+    // Fallback: Force visibility via injection
     await page.evaluate(() => {
-      const content = document.querySelector('.dropdown-content') || document.querySelector('.dropdown-menu');
-      if (content) {
-        content.style.display = 'block';
-        content.style.visibility = 'visible';
-        content.style.opacity = '1';
-      }
+      const menus = document.querySelectorAll('.dropdown-content, .dropdown-menu, .user-footer');
+      menus.forEach(m => {
+        (m as HTMLElement).style.display = 'block';
+        (m as HTMLElement).style.visibility = 'visible';
+        (m as HTMLElement).style.opacity = '1';
+      });
     }).catch(() => null);
 
     await page.waitForSelector(logoutSelector, { visible: true, timeout: 3000 }).catch(() => null);
 
-    // 3. Perform the logout click
+    // 3. Perform the logout click or forced redirect
     await page.evaluate((sel) => {
-      const el = document.querySelector(sel);
+      const el = document.querySelector(sel) as HTMLElement;
       if (el) {
         el.click();
       } else {
-        // Absolute fallback: direct navigation if the element is missing from DOM
         const origin = window.location.origin;
         window.location.href = origin + '/Student/logout.aspx';
       }

@@ -93,7 +93,7 @@ export default function OpPage() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const [presetModalOpen, setPresetModalOpen] = useState(false);
-  const [statusNotif, setStatusNotif] = useState<{ msg: string, type: 'info' | 'success' | 'error' } | null>(null);
+  const [statusNotif, setStatusNotif] = useState<{ msg: string, type: 'info' | 'success' | 'error', sticky?: boolean } | null>(null);
   const [isZoomed, setIsZoomed] = useState(false);
   const crosshairRef = useRef<HTMLDivElement>(null);
   const [isHoveringBrowser, setIsHoveringBrowser] = useState(false);
@@ -128,9 +128,11 @@ export default function OpPage() {
   } | null>(null);
   const [showReportButton, setShowReportButton] = useState(false);
 
-  const showNotif = (msg: string, type: 'info' | 'success' | 'error' = 'info') => {
-    setStatusNotif({ msg, type });
-    setTimeout(() => setStatusNotif(null), 3500);
+  const showNotif = (msg: string, type: 'info' | 'success' | 'error' = 'info', sticky = false) => {
+    setStatusNotif({ msg, type, sticky });
+    if (!sticky) {
+      setTimeout(() => setStatusNotif(null), 3500);
+    }
   };
 
   useEffect(() => {
@@ -204,8 +206,9 @@ export default function OpPage() {
     }
 
     setIsSendingPreset(true);
+    setIsSendingPreset(true);
     setPresetModalOpen(false);
-    showNotif("Transmitting request...", "info");
+    showNotif("TRANSMITTING: IN_PROCESS. DO_NOT_CLOSE_WINDOW...", "info", true);
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     try {
@@ -218,6 +221,7 @@ export default function OpPage() {
         body: JSON.stringify({ email: requestEmail, message: presetMessage })
       });
       
+      setStatusNotif(null); // Clear sticky
       if (response.ok) {
         showNotif("Request transmitted successfully.", "success");
         setPresetMessage("");
@@ -225,9 +229,8 @@ export default function OpPage() {
         showNotif("Transmission failed. Server error.", "error");
       }
     } catch (err) {
-      showNotif("Preset request transmitted successfully.", "success");
-      setPresetModalOpen(false);
-      setPresetMessage('');
+      setStatusNotif(null); // Clear sticky
+      showNotif("Transmission failed. Network error.", "error");
     } finally {
       setIsSendingPreset(false);
     }
