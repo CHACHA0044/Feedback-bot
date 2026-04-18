@@ -96,14 +96,23 @@ export default function OpPage() {
   const [statusNotif, setStatusNotif] = useState<{ msg: string, type: 'info' | 'success' | 'error' } | null>(null);
   const [isZoomed, setIsZoomed] = useState(false);
   const crosshairRef = useRef<HTMLDivElement>(null);
-  const [isHoveringBrowser, setIsHoveringBrowser] = useState(false);
-  const [requestEmail, setRequestEmail] = useState('');
+  const [isSendingPreset, setIsSendingPreset] = useState(false);
+  const [isInvalidEmail, setIsInvalidEmail] = useState(false);
+  const [requestEmail, setRequestEmail] = useState("");
   const [specificsModalOpen, setSpecificsModalOpen] = useState(false);
   const [hasContinued, setHasContinued] = useState(false);
   const [selectedSpecCategory, setSelectedSpecCategory] = useState<string | null>(null);
   const [isExecutingSpecific, setIsExecutingSpecific] = useState(false);
-  const [sessionId, setSessionId] = useState(() => `sess-${Math.random().toString(36).substr(2, 9)}`);
-  const [isSendingPreset, setIsSendingPreset] = useState(false);
+  const [sessionId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('SESSION_ID');
+      if (saved) return saved;
+      const newId = `sess-${Math.random().toString(36).substr(2, 9)}`;
+      sessionStorage.setItem('SESSION_ID', newId);
+      return newId;
+    }
+    return `sess-${Math.random().toString(36).substr(2, 9)}`;
+  });
   const [summary, setSummary] = useState<{
     success: number;
     errors: number;
@@ -129,10 +138,8 @@ export default function OpPage() {
     try {
       const savedConfig = localStorage.getItem(CONFIG_STORAGE_KEY);
       if (savedConfig) {
-        const parsed = JSON.parse(savedConfig);
-        delete parsed.studentId;
-        delete parsed.password;
-        setFormData(prev => ({ ...prev, ...parsed }));
+        const { studentId, password, ...rest } = JSON.parse(savedConfig);
+        setFormData(prev => ({ ...prev, ...rest }));
       }
     } catch (_) { }
 
@@ -177,30 +184,40 @@ export default function OpPage() {
   const [presetMessage, setPresetMessage] = useState('');
 
   const handleSendPresetRequest = async () => {
-    if (!requestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestEmail)) {
-      showNotif("Invalid Uplink Address (Email).", "error");
+    if (!presetMessage.trim() || !requestEmail.trim()) {
+      setIsInvalidEmail(true);
       return;
     }
-    if (!presetMessage.trim()) {
-      showNotif("Protocol aborted: Request body empty.", "error");
+    
+    // Simple email regex
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(requestEmail)) {
+      setIsInvalidEmail(true);
       return;
     }
 
     setIsSendingPreset(true);
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    setPresetModalOpen(false);
+    showNotif("Transmitting request...", "info");
 
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     try {
-      await fetch(`${backendUrl}/api/request-preset`, {
+      const response = await fetch(`${backendUrl}/api/request-preset`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: requestEmail, message: presetMessage, configData: formData })
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-session-id': sessionId 
+        },
+        body: JSON.stringify({ email: requestEmail, message: presetMessage })
       });
-      // Even if fetch fails or 404s, we show success to the user for UI flow
-      showNotif("Preset request transmitted successfully.", "success");
-      setPresetModalOpen(false);
-      setPresetMessage('');
+      
+      if (response.ok) {
+        showNotif("Request transmitted successfully.", "success");
+        setPresetMessage("");
+      } else {
+        showNotif("Transmission failed. Server error.", "error");
+      }
     } catch (err) {
-      // Intercept fetch failure
       showNotif("Preset request transmitted successfully.", "success");
       setPresetModalOpen(false);
       setPresetMessage('');
@@ -274,9 +291,8 @@ export default function OpPage() {
   }, []);
 
   useEffect(() => {
-    const configToSave = { ...formData };
-    delete configToSave.studentId;
-    delete configToSave.password;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { studentId, password, ...configToSave } = formData;
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configToSave));
   }, [formData]);
 
@@ -287,9 +303,8 @@ export default function OpPage() {
   }, [logs]);
 
   const persistRunState = useCallback((reason: string) => {
-    const runFormData = { ...formData };
-    delete runFormData.studentId;
-    delete runFormData.password;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { studentId, password, ...runFormData } = formData;
 
     const payload = {
       step,
@@ -479,9 +494,8 @@ export default function OpPage() {
 
   useEffect(() => {
     if (step !== 'executing') return;
-    const runFormData = { ...formData };
-    delete runFormData.studentId;
-    delete runFormData.password;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { studentId, password, ...runFormData } = formData;
 
     const payload = {
       step,

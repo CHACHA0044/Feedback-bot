@@ -2566,8 +2566,13 @@ app.post("/api/request-preset", async (req, res) => {
       console.log(`[MAIL] Attempting to transmit preset request from ${email}...`);
       try {
         const transporter = nodemailer.createTransport({
-          service: 'gmail',
-          auth: { user: MAIL_USER, pass: MAIL_PASS }
+          host: 'smtp.gmail.com',
+          port: 465,
+          secure: true, // true for 465, false for other ports
+          auth: { user: MAIL_USER, pass: MAIL_PASS },
+          tls: {
+            rejectUnauthorized: false
+          }
         });
 
         // Verify transporter connection
