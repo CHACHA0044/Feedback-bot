@@ -206,6 +206,10 @@ export default function OpPage() {
     }
 
     setIsSendingPreset(true);
+    
+    // Hold modal open for 2 seconds with "TRANSMITTING..." button state
+    await new Promise(res => setTimeout(res, 2000));
+
     setPresetModalOpen(false);
     showNotif("TRANSMITTING: IN_PROCESS. DO_NOT_CLOSE_WINDOW...", "info", true);
 
