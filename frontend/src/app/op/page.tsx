@@ -1407,6 +1407,19 @@ export default function OpPage() {
                         onChange={(e) => setRequestEmail(e.target.value)}
                       />
                     </div>
+                    <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '1rem', lineHeight: '1.4' }}>
+                      <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>Note:</span> There are some issues with the mail delivery system. <span style={{ color: 'var(--primary)', fontWeight: 500 }}>Please</span> send it manually via{' '}
+                      <a 
+                        href="https://mail.google.com/mail/?view=cm&fs=1&to=pdembla@student.iul.ac.in&su=New%20Preset%20Request" 
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.mailEmojiBtn}
+                        title="Send via Gmail"
+                      >
+                        <span className={styles.desktopMail}>🖂</span>
+                        <span className={styles.mobileMail}>📩</span>
+                      </a>
+                    </p>
                     <button
                       type="button"
                       className="btn-primary"
