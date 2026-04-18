@@ -647,21 +647,6 @@ export default function OpPage() {
     }
   };
 
-  const handlePortalLogout = async () => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    try {
-      addLog("LOGOUT_SEQUENCE_INITIATED", "info");
-      await fetch(`${backendUrl}/api/portal-logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-session-id': sessionId
-        }
-      });
-    } catch (err) {
-      addLog("Logout protocol failed.", "error");
-    }
-  };
 
   const handleExecuteSpecific = async (category: string, subject?: string, teacher?: string) => {
     setIsExecutingSpecific(true);
