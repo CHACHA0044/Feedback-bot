@@ -202,8 +202,7 @@ export default function LandingPage() {
       </section>
 
       <footer className={styles.footer}>
-        <p>&copy; {new Date().getFullYear()} FEEDBACK-BOT.V2. MISSION READY.</p>
-        <p style={{ marginTop: '0.5rem', opacity: 0.5 }}>AUTONOMOUS FEEDBACK PROTOCOL ENABLED.</p>
+        <p>&copy; {new Date().getFullYear()} FEEDBACK-BOT.V2</p>
       </footer>
 
       {/* Feature Detail Modal */}

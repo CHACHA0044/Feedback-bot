@@ -2563,23 +2563,32 @@ app.post("/api/request-preset", async (req, res) => {
     const MAIL_PASS = process.env.MAIL_PASS;
 
     if (MAIL_USER && MAIL_PASS) {
+      console.log(`[MAIL] Attempting to transmit preset request from ${email}...`);
       try {
         const transporter = nodemailer.createTransport({
           service: 'gmail',
           auth: { user: MAIL_USER, pass: MAIL_PASS }
         });
 
-        await transporter.sendMail({
+        // Verify transporter connection
+        await transporter.verify();
+        console.log("[MAIL] SMTP Uplink Verified ✓");
+
+        const info = await transporter.sendMail({
           from: `"Feedback Bot" <${MAIL_USER}>`,
           to: "pdembla@student.iul.ac.in",
           subject: `New Preset Request from ${email}`,
-          text: `Message: ${message}\n\nConfig Data:\n${JSON.stringify(scrubbedConfig, null, 2)}`
+          text: message
         });
+
+        console.log(`[MAIL] Success: Transmission ID ${info.messageId}`);
         log.success("Email notification transmitted to Mission Control.");
       } catch (err) {
+        console.error(`[MAIL] CRITICAL ERROR: ${err.message}`);
         log.error(`Mail delivery failed: ${err.message}`);
       }
     } else {
+      console.log("[MAIL] Skipping transmission: MAIL_USER or MAIL_PASS not configured in environment.");
       log.warning("MAIL_USER or MAIL_PASS missing. Notification logged to console only.");
     }
 
