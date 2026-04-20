@@ -442,7 +442,17 @@
   overflow: hidden;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 20px rgba(240, 195, 60, 0.15);
   cursor: none !important;
-  touch-action: none; /* Critical for mobile: removes 300ms delay and prevents browser gestures from interfering */
+  touch-action: none;
+}
+
+.viewportWrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .customCrosshair {
@@ -505,10 +515,14 @@
 
 @media (max-width: 600px) {
   .browserView {
-    height: 480px;
+    height: 500px;
     /* Increased for better mobile visibility and easier interaction */
     width: 100%;
     margin: 0 auto;
+    cursor: crosshair !important;
+  }
+
+  .viewportWrapper {
     cursor: crosshair !important;
   }
 
@@ -949,6 +963,7 @@
   object-fit: contain;
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   transform-origin: 50% 30%;
+  pointer-events: none; /* Interactions handled by viewportWrapper */
 }
 
 .liveViewImage.zoomed {
@@ -964,9 +979,14 @@
 }
 
 @media (max-width: 600px) {
+  .liveViewImage {
+    object-fit: cover; /* Fill the width on mobile for better visibility */
+    object-position: center top; /* Focus on the top of the page where inputs usually are */
+  }
+
   .liveViewImage.zoomed {
-    transform: scale(2.8);
-    transform-origin: 50% 35%;
+    transform: scale(2.2); /* Reduced since cover already zooms significantly */
+    transform-origin: 50% 20%;
   }
 }
 

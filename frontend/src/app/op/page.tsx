@@ -705,62 +705,86 @@ export default function OpPage() {
     }
   };
 
-  const handleImageInteraction = async (e: React.PointerEvent<HTMLImageElement>) => {
-    // Only handle primary button or touch
+  const handleImageInteraction = async (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const rect = e.currentTarget.getBoundingClientRect();
+    const img = e.currentTarget.querySelector('img');
+    if (!img) return;
 
-    const img = e.currentTarget;
     const { naturalWidth, naturalHeight } = img;
     const imageRatio = naturalWidth / (naturalHeight || 1);
     const containerRatio = rect.width / (rect.height || 1);
 
-    let drawnWidth = rect.width;
-    let drawnHeight = rect.height;
-    let offsetX = 0;
-    let offsetY = 0;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 600;
+    const objectFit = isMobile ? 'cover' : 'contain';
 
-    if (containerRatio > imageRatio) {
-      drawnWidth = rect.height * imageRatio;
-      offsetX = (rect.width - drawnWidth) / 2;
+    let drawnWidth, drawnHeight, offsetX = 0, offsetY = 0;
+
+    if (objectFit === 'contain') {
+      if (containerRatio > imageRatio) {
+        drawnHeight = rect.height;
+        drawnWidth = drawnHeight * imageRatio;
+        offsetX = (rect.width - drawnWidth) / 2;
+      } else {
+        drawnWidth = rect.width;
+        drawnHeight = drawnWidth / imageRatio;
+        offsetY = (rect.height - drawnHeight) / 2;
+      }
     } else {
-      drawnHeight = rect.width / imageRatio;
-      offsetY = (rect.height - drawnHeight) / 2;
+      // 'cover' logic
+      if (containerRatio > imageRatio) {
+        drawnWidth = rect.width;
+        drawnHeight = drawnWidth / imageRatio;
+        offsetY = 0; // object-position: top
+      } else {
+        drawnHeight = rect.height;
+        drawnWidth = drawnHeight * imageRatio;
+        offsetX = (rect.width - drawnWidth) / 2;
+      }
     }
 
-    const clickX = e.clientX - rect.left - offsetX;
-    const clickY = e.clientY - rect.top - offsetY;
+    // Get click position relative to the wrapper
+    let clickX = e.clientX - rect.left;
+    let clickY = e.clientY - rect.top;
 
-    // Ignore clicks on letterbox bars
-    if (clickX < 0 || clickX > drawnWidth || clickY < 0 || clickY > drawnHeight) return;
+    // Apply inverse zoom transform if applicable
+    if (isZoomed) {
+      const scale = isMobile ? 2.2 : 1.4;
+      const originX = rect.width * 0.5;
+      const originY = isMobile ? rect.height * 0.2 : rect.height * 0.25;
 
-    const x_scaled = (clickX / drawnWidth) * naturalWidth;
-    const y_scaled = (clickY / drawnHeight) * naturalHeight;
+      clickX = originX + (clickX - originX) / scale;
+      clickY = originY + (clickY - originY) / scale;
+    }
 
-    // Visual feedback - must be relative to the browserView container
-    const containerRect = e.currentTarget.parentElement?.getBoundingClientRect() || rect;
-    const rippleX = e.clientX - containerRect.left;
-    const rippleY = e.clientY - containerRect.top;
+    // Final mapping to image pixels
+    const relativeX = clickX - offsetX;
+    const relativeY = clickY - offsetY;
+
+    if (relativeX < 0 || relativeX > drawnWidth || relativeY < 0 || relativeY > drawnHeight) return;
+
+    const x_scaled = (relativeX / drawnWidth) * naturalWidth;
+    const y_scaled = (relativeY / drawnHeight) * naturalHeight;
+
+    // Visual feedback
+    const rippleX = e.clientX - rect.left;
+    const rippleY = e.clientY - rect.top;
 
     setClickIndicator({ x: rippleX, y: rippleY, id: Date.now() });
     setRipples(prev => [...prev, { x: rippleX, y: rippleY, id: Date.now() }]);
-
     setTimeout(() => setClickIndicator(null), 400);
 
-    // Mobile keyboard bridge - ensure focus is snappy
     if (mobileInputRef.current) {
       mobileInputRef.current.focus({ preventScroll: true });
     }
 
     try {
-      // Haptic feedback for mobile
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate(12);
+        navigator.vibrate(15);
       }
 
-      // Dispatch the interaction immediately
       fetch(`${backendUrl}/api/interact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-session-id': sessionId || '' },
@@ -1606,42 +1630,42 @@ export default function OpPage() {
                   }}
                 />
 
-                {liveScreenshot ? (
-                  <>
-                    <img
-                      src={liveScreenshot}
-                      alt="Live Remote Matrix"
-                      className={`${styles.liveViewImage} ${isZoomed ? styles.zoomed : ""}`}
-                      onPointerDown={handleImageInteraction}
-                      onMouseMove={handleImageMouseMove}
-                      onContextMenu={(e) => e.preventDefault()}
-                      draggable={false}
-                      style={{ touchAction: 'none' }}
-                    />
-                    <AnimatePresence>
-                      {ripples.map(ripple => (
-                        <motion.div
-                          key={ripple.id}
-                          className={styles.clickRipple}
-                          initial={{ opacity: 1, scale: 0 }}
-                          animate={{ opacity: 0, scale: 2 }}
-                          exit={{ opacity: 0 }}
-                          style={{
-                            left: ripple.x,
-                            top: ripple.y
-                          }}
-                          onAnimationComplete={() => {
-                            setRipples(prev => prev.filter(r => r.id !== ripple.id));
-                          }}
-                        />
-                      ))}
-                    </AnimatePresence>
-                  </>
-                ) : (
-                  <div className={styles.browserStatusText} style={{ color: isKilled ? '#f00' : '#333' }}>
-                    {isKilled ? 'SYSTEM_SHUTDOWN: PROCESS_TERMINATED' : 'WAITING_FOR_DATA_STREAM...'}
-                  </div>
-                )}
+                <div className={styles.viewportWrapper} onPointerDown={handleImageInteraction}>
+                  {liveScreenshot ? (
+                    <>
+                      <img
+                        src={liveScreenshot}
+                        alt="Live Remote Matrix"
+                        className={`${styles.liveViewImage} ${isZoomed ? styles.zoomed : ""}`}
+                        onMouseMove={handleImageMouseMove}
+                        onContextMenu={(e) => e.preventDefault()}
+                        draggable={false}
+                      />
+                      <AnimatePresence>
+                        {ripples.map(ripple => (
+                          <motion.div
+                            key={ripple.id}
+                            className={styles.clickRipple}
+                            initial={{ opacity: 1, scale: 0 }}
+                            animate={{ opacity: 0, scale: 2 }}
+                            exit={{ opacity: 0 }}
+                            style={{
+                              left: ripple.x,
+                              top: ripple.y
+                            }}
+                            onAnimationComplete={() => {
+                              setRipples(prev => prev.filter(r => r.id !== ripple.id));
+                            }}
+                          />
+                        ))}
+                      </AnimatePresence>
+                    </>
+                  ) : (
+                    <div className={styles.browserStatusText} style={{ color: isKilled ? '#f00' : '#333' }}>
+                      {isKilled ? 'SYSTEM_SHUTDOWN: PROCESS_TERMINATED' : 'WAITING_FOR_DATA_STREAM...'}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Hidden input bridge for mobile keyboard support */}
@@ -1801,7 +1825,7 @@ export default function OpPage() {
                                 textShadow: '0 0 10px rgba(0, 210, 255, 0.3)'
                               }}
                             >
-                              / SPECIFICS
+                              # Specifics
                             </button>
                           )}
                       </>
