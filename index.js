@@ -2475,10 +2475,15 @@ app.post("/api/interact", async (req, res) => {
     try {
       switch (action) {
         case 'click':
-          await session.activePage.mouse.click(x, y, { delay: 50 });
+          const dsf = await session.activePage.evaluate(() => window.devicePixelRatio || 1);
+          await session.activePage.mouse.click(x / dsf, y / dsf, { delay: 50 });
           break;
+        case 'move':
+          const dsfMove = await session.activePage.evaluate(() => window.devicePixelRatio || 1);
+          await session.activePage.mouse.move(x / dsfMove, y / dsfMove);
+          return res.send({ status: "success" }); // Don't screenshot on move to save bandwidth
         case 'type':
-          await session.activePage.keyboard.type(text || key, { delay: 30 });
+          await session.activePage.keyboard.type(text || key, { delay: 20 });
           break;
         case 'press':
           await session.activePage.keyboard.press(key);
@@ -2486,6 +2491,15 @@ app.post("/api/interact", async (req, res) => {
         default:
           return res.status(400).send({ status: "error", message: "Invalid action" });
       }
+
+      // Immediate screenshot feedback for better perceived performance
+      const screenshotData = await session.activePage.screenshot({
+        encoding: 'base64',
+        type: 'jpeg',
+        quality: 40
+      });
+      broadcast(ip, { type: 'screenshot', data: `data:image/jpeg;base64,${screenshotData}` });
+
       res.send({ status: "success" });
     } catch (err) {
       res.status(500).send({ status: "error", message: err.message });

@@ -277,6 +277,8 @@ export default function OpPage() {
   const typeBufferRef = useRef<string>("");
   const typeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [clickIndicator, setClickIndicator] = useState<{ x: number, y: number, id: number } | null>(null);
+  const [ripples, setRipples] = useState<{ x: number, y: number, id: number }[]>([]);
+  const lastMoveTimeRef = useRef<number>(0);
 
   const queueInteraction = useCallback((task: () => Promise<void>) => {
     interactionQueueRef.current = interactionQueueRef.current
@@ -735,7 +737,12 @@ export default function OpPage() {
     const y_scaled = (clickY / drawnHeight) * naturalHeight;
 
     // Visual feedback
-    setClickIndicator({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: Date.now() });
+    const rippleX = e.clientX - rect.left;
+    const rippleY = e.clientY - rect.top;
+    
+    setClickIndicator({ x: rippleX, y: rippleY, id: Date.now() });
+    setRipples(prev => [...prev, { x: rippleX, y: rippleY, id: Date.now() }]);
+    
     setTimeout(() => setClickIndicator(null), 400);
 
     // Debugging coordinates
@@ -747,22 +754,63 @@ export default function OpPage() {
     }
 
     try {
-      // Direct non-blocking fetch for clicks to avoid queue delays
+      // Haptic feedback for mobile
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(10);
+      }
+
+      // Dispatch the click
       fetch(`${backendUrl}/api/interact`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-session-id': sessionId
-        },
+        headers: { 'Content-Type': 'application/json', 'x-session-id': sessionId || '' },
         body: JSON.stringify({ action: 'click', x: x_scaled, y: y_scaled })
-      }).then(res => {
-        if (!res.ok) addLog(`Interact Failed: status ${res.status}`, "error");
-      }).catch(err => {
-        addLog(`Interact Network Error: ${err.message}`, "error");
-      });
+      }).catch(() => undefined);
     } catch (err) {
       console.error("Interaction failed");
     }
+  };
+
+  const handleImageMouseMove = async (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!liveScreenshot || isKilled) return;
+    
+    const now = Date.now();
+    if (now - lastMoveTimeRef.current < 200) return; // Throttled to ~5fps
+    lastMoveTimeRef.current = now;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const naturalWidth = e.currentTarget.naturalWidth || 1280;
+    const naturalHeight = e.currentTarget.naturalHeight || 800;
+
+    const imageRatio = naturalWidth / (naturalHeight || 1);
+    const containerRatio = rect.width / (rect.height || 1);
+
+    let drawnWidth = rect.width;
+    let drawnHeight = rect.height;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (containerRatio > imageRatio) {
+      drawnWidth = rect.height * imageRatio;
+      offsetX = (rect.width - drawnWidth) / 2;
+    } else {
+      drawnHeight = rect.width / imageRatio;
+      offsetY = (rect.height - drawnHeight) / 2;
+    }
+
+    const mouseX = e.clientX - rect.left - offsetX;
+    const mouseY = e.clientY - rect.top - offsetY;
+
+    if (mouseX < 0 || mouseX > drawnWidth || mouseY < 0 || mouseY > drawnHeight) return;
+
+    const x_scaled = (mouseX / drawnWidth) * naturalWidth;
+    const y_scaled = (mouseY / drawnHeight) * naturalHeight;
+
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    fetch(`${backendUrl}/api/interact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-session-id': sessionId || '' },
+      body: JSON.stringify({ action: 'move', x: x_scaled, y: y_scaled })
+    }).catch(() => undefined);
   };
 
   const handleKeyPress = useCallback(async (key: string) => {
@@ -1548,7 +1596,28 @@ export default function OpPage() {
                       alt="Live Remote Matrix"
                       className={`${styles.liveViewImage} ${isZoomed ? styles.zoomed : ""}`}
                       onClick={handleImageClick}
+                      onMouseMove={handleImageMouseMove}
+                      onContextMenu={(e) => e.preventDefault()}
+                      draggable={false}
                     />
+                    <AnimatePresence>
+                      {ripples.map(ripple => (
+                        <motion.div
+                          key={ripple.id}
+                          className={styles.clickRipple}
+                          initial={{ opacity: 1, scale: 0 }}
+                          animate={{ opacity: 0, scale: 2 }}
+                          exit={{ opacity: 0 }}
+                          style={{
+                            left: ripple.x,
+                            top: ripple.y
+                          }}
+                          onAnimationComplete={() => {
+                            setRipples(prev => prev.filter(r => r.id !== ripple.id));
+                          }}
+                        />
+                      ))}
+                    </AnimatePresence>
                   </>
                 ) : (
                   <div className={styles.browserStatusText} style={{ color: isKilled ? '#f00' : '#333' }}>
@@ -1561,11 +1630,16 @@ export default function OpPage() {
               <input
                 ref={mobileInputRef}
                 type="text"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck="false"
                 style={{
                   position: 'absolute',
                   opacity: 0,
                   pointerEvents: 'none',
-                  left: '-9999px'
+                  left: '-9999px',
+                  fontSize: '16px' // Prevent iOS zoom on focus
                 }}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -1577,6 +1651,10 @@ export default function OpPage() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') void handleKeyPress('Enter');
                   if (e.key === 'Backspace') void handleKeyPress('Backspace');
+                  if (e.key === 'Tab') {
+                    e.preventDefault();
+                    void handleKeyPress('Tab');
+                  }
                 }}
               />
             </div>
@@ -1708,6 +1786,13 @@ export default function OpPage() {
                               / SPECIFICS
                             </button>
                           )}
+                        <button
+                          onClick={() => handleKeyPress('Tab')}
+                          className={styles.commandDeckButton}
+                          style={{ borderColor: '#888', color: '#888' }}
+                        >
+                          ⇥ TAB
+                        </button>
                       </>
                     )}
 
