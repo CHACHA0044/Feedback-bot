@@ -197,7 +197,7 @@ export default function OpPage() {
       setIsInvalidEmail(true);
       return;
     }
-    
+
     // Simple email regex
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(requestEmail)) {
@@ -209,7 +209,7 @@ export default function OpPage() {
     const startTime = Date.now();
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
-    
+
     let isRequestFinished = false;
     let requestResult: { ok: boolean; msg: string } | null = null;
 
@@ -217,9 +217,9 @@ export default function OpPage() {
       try {
         const response = await fetch(`${backendUrl}/api/request-preset`, {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
-            'x-session-id': sessionId 
+            'x-session-id': sessionId
           },
           body: JSON.stringify({ email: requestEmail, message: presetMessage })
         });
@@ -736,13 +736,14 @@ export default function OpPage() {
     const x_scaled = (clickX / drawnWidth) * naturalWidth;
     const y_scaled = (clickY / drawnHeight) * naturalHeight;
 
-    // Visual feedback
-    const rippleX = e.clientX - rect.left;
-    const rippleY = e.clientY - rect.top;
-    
+    // Visual feedback - must be relative to the browserView container
+    const containerRect = e.currentTarget.parentElement?.getBoundingClientRect() || rect;
+    const rippleX = e.clientX - containerRect.left;
+    const rippleY = e.clientY - containerRect.top;
+
     setClickIndicator({ x: rippleX, y: rippleY, id: Date.now() });
     setRipples(prev => [...prev, { x: rippleX, y: rippleY, id: Date.now() }]);
-    
+
     setTimeout(() => setClickIndicator(null), 400);
 
     // Debugging coordinates
@@ -772,7 +773,7 @@ export default function OpPage() {
 
   const handleImageMouseMove = async (e: React.MouseEvent<HTMLImageElement>) => {
     if (!liveScreenshot || isKilled) return;
-    
+
     const now = Date.now();
     if (now - lastMoveTimeRef.current < 200) return; // Throttled to ~5fps
     lastMoveTimeRef.current = now;
@@ -940,7 +941,7 @@ export default function OpPage() {
     } catch (err) {
       addLog("LOGOUT_FAILED: Force-closing session...", "error");
     }
-    
+
     // Force CRT shutdown and final state regardless of server result
     addLog("SESSION_FINISHED", "info");
     setCrtState('off');
@@ -1392,6 +1393,22 @@ export default function OpPage() {
             </div>
           </div>
 
+          {/* Section 8: Instructions*/}
+          <div className={`${styles.section} ${styles.instructionSection} glass`}>
+            <div className={styles.sectionTitle}>
+              <span>Section 08 - Operational Protocols</span>
+            </div>
+            <div style={{ paddingLeft: '0.5rem' }}>
+              <p style={{ fontSize: '0.8rem', marginBottom: '1rem', color: 'var(--muted)', letterSpacing: '1px' }}>CRITICAL MISSION NOTES :</p>
+              <div className={styles.instructionText}>
+                <span className={styles.goldText}>PRECISION FOCUS:</span> Ensure you click <strong>centrally</strong> on input fields when IUSMS opens to ensure proper selection.
+              </div>
+              <div className={styles.instructionText}>
+                <span className={styles.goldText}>PROTOCOL HANDOVER:</span> After manual credential entry, click <strong>&apos;CONTINUE&apos;</strong> in the Command Deck to start automation.
+              </div>
+            </div>
+          </div>
+
           <button type="submit" className="btn-primary" style={{ marginTop: '2rem', width: '100%', padding: '1.5rem', fontSize: '1.2rem' }}>
             Initiate Protocol
           </button>
@@ -1457,8 +1474,8 @@ export default function OpPage() {
                     </div>
                     <p style={{ color: '#888', fontSize: '0.8rem', marginBottom: '1rem', lineHeight: '1.4' }}>
                       <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>Note:</span> There are some issues with the mail delivery system. <span style={{ color: 'var(--primary)', fontWeight: 500 }}>Please</span> send it manually {' '}
-                      <a 
-                        href="https://mail.google.com/mail/?view=cm&fs=1&to=pdembla@student.iul.ac.in&su=New%20Preset%20Request" 
+                      <a
+                        href="https://mail.google.com/mail/?view=cm&fs=1&to=pdembla@student.iul.ac.in&su=New%20Preset%20Request"
                         target="_blank"
                         rel="noopener noreferrer"
                         className={styles.mailEmojiBtn}
@@ -1786,13 +1803,6 @@ export default function OpPage() {
                               / SPECIFICS
                             </button>
                           )}
-                        <button
-                          onClick={() => handleKeyPress('Tab')}
-                          className={styles.commandDeckButton}
-                          style={{ borderColor: '#888', color: '#888' }}
-                        >
-                          ⇥ TAB
-                        </button>
                       </>
                     )}
 
