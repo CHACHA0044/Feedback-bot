@@ -279,6 +279,11 @@ export default function OpPage() {
   const [clickIndicator, setClickIndicator] = useState<{ x: number, y: number, id: number } | null>(null);
   const [ripples, setRipples] = useState<{ x: number, y: number, id: number }[]>([]);
   const lastMoveTimeRef = useRef<number>(0);
+  const pointerStartPosRef = useRef<{ x: number, y: number } | null>(null);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    pointerStartPosRef.current = { x: e.clientX, y: e.clientY };
+  };
 
   const queueInteraction = useCallback((task: () => Promise<void>) => {
     interactionQueueRef.current = interactionQueueRef.current
@@ -475,7 +480,11 @@ export default function OpPage() {
         setSummary(data.data);
         addLog("Summary report generated.", "success");
       } else if (data.type === 'screenshot') {
-        setLiveScreenshot(data.data);
+        const img = new Image();
+        img.src = data.data;
+        img.decode()
+          .then(() => setLiveScreenshot(data.data))
+          .catch(() => setLiveScreenshot(data.data));
       } else if (data.type === 'captcha_required') {
         setIsCaptchaRequired(true);
       } else if (data.type === 'status_update') {
@@ -708,6 +717,15 @@ export default function OpPage() {
   const handleImageInteraction = async (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
 
+    // Movement threshold to prevent clicks while scrolling
+    if (pointerStartPosRef.current) {
+      const dist = Math.sqrt(
+        Math.pow(e.clientX - pointerStartPosRef.current.x, 2) +
+        Math.pow(e.clientY - pointerStartPosRef.current.y, 2)
+      );
+      if (dist > 10) return; // Ignore if user moved finger (likely a scroll)
+    }
+
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const rect = e.currentTarget.getBoundingClientRect();
     const img = e.currentTarget.querySelector('img');
@@ -717,7 +735,7 @@ export default function OpPage() {
     const imageRatio = naturalWidth / (naturalHeight || 1);
     const containerRatio = rect.width / (rect.height || 1);
 
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 600;
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
     const objectFit = isMobile ? 'cover' : 'contain';
 
     let drawnWidth, drawnHeight, offsetX = 0, offsetY = 0;
@@ -751,7 +769,7 @@ export default function OpPage() {
 
     // Apply inverse zoom transform if applicable
     if (isZoomed) {
-      const scale = isMobile ? 2.2 : 1.4;
+      const scale = isMobile ? 2.5 : 1.4;
       const originX = rect.width * 0.5;
       const originY = isMobile ? rect.height * 0.2 : rect.height * 0.25;
 
@@ -782,8 +800,10 @@ export default function OpPage() {
 
     try {
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate(15);
+        navigator.vibrate(20); // Slightly more pronounced for better feedback
       }
+
+      e.preventDefault(); // Stop ghost clicks and browser-simulated events
 
       fetch(`${backendUrl}/api/interact`, {
         method: 'POST',
@@ -1630,7 +1650,11 @@ export default function OpPage() {
                   }}
                 />
 
-                <div className={styles.viewportWrapper} onPointerDown={handleImageInteraction}>
+                <div 
+                  className={styles.viewportWrapper} 
+                  onPointerDown={handlePointerDown}
+                  onPointerUp={handleImageInteraction}
+                >
                   {liveScreenshot ? (
                     <>
                       <img
@@ -1640,6 +1664,7 @@ export default function OpPage() {
                         onMouseMove={handleImageMouseMove}
                         onContextMenu={(e) => e.preventDefault()}
                         draggable={false}
+                        decoding="async"
                       />
                       <AnimatePresence>
                         {ripples.map(ripple => (

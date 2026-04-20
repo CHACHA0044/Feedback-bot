@@ -1946,12 +1946,12 @@ async function run(inputConfig = {}, ip = 'local') {
         '--single-process'
       ],
       defaultViewport: isMobile
-        ? { width: 375, height: 812, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }
+        ? { width: 375, height: 812, isMobile: true, hasTouch: true, deviceScaleFactor: 1.3 } // Reduced from 2.0 for 50% faster screenshots
         : (IS_LOCAL ? null : { width: 1280, height: 800 })
     });
 
     const page = await browser.newPage();
-    
+    if (session) session.dsf = isMobile ? 1.3 : 1;
     if (isMobile) {
       await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1');
     }
@@ -2027,7 +2027,7 @@ async function run(inputConfig = {}, ip = 'local') {
             const screenshotData = await capturePage.screenshot({
               encoding: 'base64',
               type: 'jpeg',
-              quality: 40
+              quality: 30 // Reduced from 40 for faster encoding/transmission
             });
 
             broadcast(ip, { type: 'screenshot', data: `data:image/jpeg;base64,${screenshotData}` });
@@ -2475,11 +2475,12 @@ app.post("/api/interact", async (req, res) => {
     try {
       switch (action) {
         case 'click':
-          const dsf = await session.activePage.evaluate(() => window.devicePixelRatio || 1);
-          await session.activePage.mouse.click(x / dsf, y / dsf, { delay: 50 });
+          // Use cached DSF to save a round-trip evaluate call
+          const dsf = session.dsf || 1;
+          await session.activePage.mouse.click(x / dsf, y / dsf, { delay: 20 });
           break;
         case 'move':
-          const dsfMove = await session.activePage.evaluate(() => window.devicePixelRatio || 1);
+          const dsfMove = session.dsf || 1;
           await session.activePage.mouse.move(x / dsfMove, y / dsfMove);
           return res.send({ status: "success" }); // Don't screenshot on move to save bandwidth
         case 'type':
@@ -2496,7 +2497,7 @@ app.post("/api/interact", async (req, res) => {
       const screenshotData = await session.activePage.screenshot({
         encoding: 'base64',
         type: 'jpeg',
-        quality: 40
+        quality: 30
       });
       broadcast(ip, { type: 'screenshot', data: `data:image/jpeg;base64,${screenshotData}` });
 

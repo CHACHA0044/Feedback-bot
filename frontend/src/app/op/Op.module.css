@@ -513,13 +513,17 @@
   box-shadow: 0 0 15px var(--primary-glow);
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .browserView {
-    height: 500px;
-    /* Increased for better mobile visibility and easier interaction */
-    width: 100%;
-    margin: 0 auto;
+    height: 50vh; /* Responsive height */
+    width: 100vw;
+    margin-left: calc(-50vw + 50%); /* Break out of container padding */
+    margin-right: calc(-50vw + 50%);
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
     cursor: crosshair !important;
+    -webkit-tap-highlight-color: transparent;
   }
 
   .viewportWrapper {
@@ -978,14 +982,16 @@
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .liveViewImage {
-    object-fit: cover; /* Fill the width on mobile for better visibility */
-    object-position: center top; /* Focus on the top of the page where inputs usually are */
+    object-fit: cover;
+    object-position: center top;
+    width: 100% !important;
+    height: 100% !important;
   }
 
   .liveViewImage.zoomed {
-    transform: scale(2.2); /* Reduced since cover already zooms significantly */
+    transform: scale(2.5); /* Increased for better usability on small screens */
     transform-origin: 50% 20%;
   }
 }
