@@ -746,10 +746,14 @@ export default function OpPage() {
         drawnHeight = rect.height;
         drawnWidth = drawnHeight * imageRatio;
         offsetX = (rect.width - drawnWidth) / 2;
+        offsetY = 0;
       } else {
         drawnWidth = rect.width;
         drawnHeight = drawnWidth / imageRatio;
-        offsetY = (rect.height - drawnHeight) / 2;
+        offsetX = 0;
+        // Match CSS object-position: center 35% on mobile, otherwise center 50%
+        const verticalAnchor = isMobile ? 0.35 : 0.5;
+        offsetY = (rect.height - drawnHeight) * verticalAnchor;
       }
     } else {
       // 'cover' logic

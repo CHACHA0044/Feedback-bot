@@ -984,6 +984,8 @@
 @media (max-width: 768px) {
   .liveViewImage {
     object-fit: contain; /* Show the full page by default on mobile */
+    object-position: center 35%; /* Pushes fields lower to the center */
+    image-rendering: -webkit-optimize-contrast; /* Sharper text */
     width: 100% !important;
     height: 100% !important;
   }
