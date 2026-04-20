@@ -705,7 +705,10 @@ export default function OpPage() {
     }
   };
 
-  const handleImageClick = async (e: React.MouseEvent<HTMLImageElement>) => {
+  const handleImageInteraction = async (e: React.PointerEvent<HTMLImageElement>) => {
+    // Only handle primary button or touch
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const rect = e.currentTarget.getBoundingClientRect();
 
@@ -746,21 +749,18 @@ export default function OpPage() {
 
     setTimeout(() => setClickIndicator(null), 400);
 
-    // Debugging coordinates
-    addLog(`REMOTE_CLICK: Computed matrix coords (${Math.round(x_scaled)}, ${Math.round(y_scaled)})`, "info");
-
-    // Mobile keyboard bridge
+    // Mobile keyboard bridge - ensure focus is snappy
     if (mobileInputRef.current) {
-      mobileInputRef.current.focus();
+      mobileInputRef.current.focus({ preventScroll: true });
     }
 
     try {
       // Haptic feedback for mobile
       if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate(10);
+        navigator.vibrate(12);
       }
 
-      // Dispatch the click
+      // Dispatch the interaction immediately
       fetch(`${backendUrl}/api/interact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-session-id': sessionId || '' },
@@ -1612,10 +1612,11 @@ export default function OpPage() {
                       src={liveScreenshot}
                       alt="Live Remote Matrix"
                       className={`${styles.liveViewImage} ${isZoomed ? styles.zoomed : ""}`}
-                      onClick={handleImageClick}
+                      onPointerDown={handleImageInteraction}
                       onMouseMove={handleImageMouseMove}
                       onContextMenu={(e) => e.preventDefault()}
                       draggable={false}
+                      style={{ touchAction: 'none' }}
                     />
                     <AnimatePresence>
                       {ripples.map(ripple => (
