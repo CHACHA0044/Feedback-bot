@@ -723,10 +723,11 @@ export default function OpPage() {
         Math.pow(e.clientX - pointerStartPosRef.current.x, 2) +
         Math.pow(e.clientY - pointerStartPosRef.current.y, 2)
       );
-      if (dist > 10) return; // Ignore if user moved finger (likely a scroll)
+      if (dist > 30) return; // Increased threshold for better mobile reliability
     }
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
+    e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
     const img = e.currentTarget.querySelector('img');
     if (!img) return;
@@ -736,7 +737,7 @@ export default function OpPage() {
     const containerRatio = rect.width / (rect.height || 1);
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
-    const objectFit = isMobile ? 'cover' : 'contain';
+    const objectFit = 'contain'; // Force contain for consistent mapping across devices
 
     let drawnWidth, drawnHeight, offsetX = 0, offsetY = 0;
 
@@ -769,9 +770,9 @@ export default function OpPage() {
 
     // Apply inverse zoom transform if applicable
     if (isZoomed) {
-      const scale = isMobile ? 2.5 : 1.4;
+      const scale = isMobile ? 2.8 : 1.4;
       const originX = rect.width * 0.5;
-      const originY = isMobile ? rect.height * 0.2 : rect.height * 0.25;
+      const originY = isMobile ? rect.height * 0.25 : rect.height * 0.25;
 
       clickX = originX + (clickX - originX) / scale;
       clickY = originY + (clickY - originY) / scale;

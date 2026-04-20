@@ -515,15 +515,14 @@
 
 @media (max-width: 768px) {
   .browserView {
-    height: 50vh; /* Responsive height */
-    width: 100vw;
-    margin-left: calc(-50vw + 50%); /* Break out of container padding */
-    margin-right: calc(-50vw + 50%);
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
+    height: 480px; 
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--primary);
     cursor: crosshair !important;
     -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    user-select: none;
   }
 
   .viewportWrapper {
@@ -984,15 +983,14 @@
 
 @media (max-width: 768px) {
   .liveViewImage {
-    object-fit: cover;
-    object-position: center top;
+    object-fit: contain; /* Show the full page by default on mobile */
     width: 100% !important;
     height: 100% !important;
   }
 
   .liveViewImage.zoomed {
-    transform: scale(2.5); /* Increased for better usability on small screens */
-    transform-origin: 50% 20%;
+    transform: scale(2.8); /* Stronger zoom to hit small inputs */
+    transform-origin: 50% 25%;
   }
 }
 
