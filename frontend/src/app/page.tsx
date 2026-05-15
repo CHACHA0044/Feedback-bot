@@ -191,7 +191,7 @@ export default function LandingPage() {
           >
             <iframe 
               src={activeVideo === 'v2' 
-                ? "https://drive.google.com/file/d/1xquUNgrf-NrCYl3hVnm16KSIeVGkLRlz/preview" 
+                ? "https://drive.google.com/file/d/11DL7KE8hCs9eu3obHDQivlHaNLIHSQ8K/view?usp=sharing" 
                 : "https://drive.google.com/file/d/1n_JXNliyj0Nkn2cihvfX0Vd6b8CFk6yZ/preview"
               } 
               allow="autoplay"
