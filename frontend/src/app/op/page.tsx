@@ -16,6 +16,28 @@ const PRESETS = {
     teachingCodes: "CG302,CS305,CS306,CS306,CS313,CS314,CS315,CS348,CS394,CS396,EC339",
     teachingTeachers: "Dr. Sufia Rehman,Rahul Ranjan,Falak Alam,Mohammad Aman,Naziya Anjum,Naziya Anjum,Mariyam Kidwai,Azra Iftekhar,Mr. Sunil Singh,Mr. Sunil Singh,Akhlaque Ahmad Khan",
     feedbackOption: "Always"
+  },
+  "Sem 7, Yr 4, CCAI B (Fuzzy Logic)": {
+    theoryCodes: "CG401,CG401,CS410,CS412,CS415,CS418,CS486",
+    theoryTeachers: "Ayaz Mahmood,Dr. Sufia Rehman,Saman Khan,Imtiyazul Haq,Dr. Faiyaz Ahmad,Mariyam Fatima,Abhishek Pandey",
+    labCodes: "CS421,CS424",
+    labTeachers: "Mohd Anas Khan,Ambreen Anees",
+    mentorDept: "Computer Science",
+    mentorName: "Saman Khan",
+    teachingCodes: "CG401,CG401,CS410,CS412,CS415,CS418,CS486,CS421,CS424",
+    teachingTeachers: "Ayaz Mahmood,Dr. Sufia Rehman,Saman Khan,Imtiyazul Haq,Dr. Faiyaz Ahmad,Mariyam Fatima,Abhishek Pandey,Mohd Anas Khan,Ambreen Anees",
+    feedbackOption: "Always"
+  },
+  "Sem 7, Yr 4, CCAI B (Mobile Computing)": {
+    theoryCodes: "CG401,CG401,CS410,CS412,CS417,CS418,CS486",
+    theoryTeachers: "Ayaz Mahmood,Dr. Sufia Rehman,Saman Khan,Imtiyazul Haq,Mohd Anas Khan,Mariyam Fatima,Abhishek Pandey",
+    labCodes: "CS421,CS424",
+    labTeachers: "Mohd Anas Khan,Ambreen Anees",
+    mentorDept: "Computer Science",
+    mentorName: "Saman Khan",
+    teachingCodes: "CG401,CG401,CS410,CS412,CS417,CS418,CS486,CS421,CS424",
+    teachingTeachers: "Ayaz Mahmood,Dr. Sufia Rehman,Saman Khan,Imtiyazul Haq,Mohd Anas Khan,Mariyam Fatima,Abhishek Pandey,Mohd Anas Khan,Ambreen Anees",
+    feedbackOption: "Always"
   }
 };
 
