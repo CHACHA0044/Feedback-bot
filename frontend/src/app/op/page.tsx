@@ -19,13 +19,13 @@ const PRESETS = {
   },
   "Sem 7, Yr 4, CCAI B (Fuzzy Logic)": {
     theoryCodes: "CG401,CG401,CS410,CS412,CS415,CS418,CS486",
-    theoryTeachers: "Ayaz Mahmood,Dr. Sufia Rehman,Saman Khan,Imtiyazul Haq,Dr. Faiyaz Ahmad,Mariyam Fatima,Abhishek Pandey",
+    theoryTeachers: "Ayaz Mahmood,Dr. Sufia Rehman,Saman Khan,Imtiyazul Haq,Dr. Faiyaz Ahamad,Mariyam Fatima,Abhishek Pandey",
     labCodes: "CS421,CS424",
     labTeachers: "Mohd Anas Khan,Ambreen Anees",
     mentorDept: "Computer Science",
     mentorName: "Saman Khan",
     teachingCodes: "CG401,CG401,CS410,CS412,CS415,CS418,CS486,CS421,CS424",
-    teachingTeachers: "Ayaz Mahmood,Dr. Sufia Rehman,Saman Khan,Imtiyazul Haq,Dr. Faiyaz Ahmad,Mariyam Fatima,Abhishek Pandey,Mohd Anas Khan,Ambreen Anees",
+    teachingTeachers: "Ayaz Mahmood,Dr. Sufia Rehman,Saman Khan,Imtiyazul Haq,Dr. Faiyaz Ahamad,Mariyam Fatima,Abhishek Pandey,Mohd Anas Khan,Ambreen Anees",
     feedbackOption: "Always"
   },
   "Sem 7, Yr 4, CCAI B (Mobile Computing)": {
