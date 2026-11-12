@@ -818,15 +818,10 @@ async function navigateToURL(page, url, pageName) {
     log.detail(`URL: ${url}`);
 
     const session = getCurrentSession();
-    const targetPage = session.activePage || page;
     try {
-      if (targetPage.isClosed()) {
-        log.warning("Active page was closed unexpectedly, falling back to base page...");
-        session.activePage = page;
-      }
-
-      const actualPage = session.activePage || page;
-      await actualPage.bringToFront();
+      const actualPage = await safeGetActivePage(page);
+      if (session) session.activePage = actualPage;
+      // actualPage.bringToFront() is already called inside safeGetActivePage
 
       // Force all links to open in current tab by stripping target="_blank"
       // This prevents "Detached Frame" errors caused by accidental tab proliferation
@@ -849,7 +844,7 @@ async function navigateToURL(page, url, pageName) {
 
       // Re-apply zoom after navigation persistence
       if (session && session.pageZoom) {
-        await targetPage.evaluate((z) => {
+        await actualPage.evaluate((z) => {
           document.body.style.zoom = z + "%";
         }, session.pageZoom);
       }
@@ -865,7 +860,7 @@ async function navigateToURL(page, url, pageName) {
       return false;
     }
   }
-  await ensurePageVisible(targetPage);
+  await ensurePageVisible(page);
 }
 
 async function getCurrentPageInfo(page) {
@@ -1417,12 +1412,47 @@ async function submitForm(page, selector) {
   }
 }
 
+// ============= PAGE RECOVERY HELPER =============
+// Safely bring a page to front, recovering to any open browser page if the
+// tracked activePage has been closed (e.g. by a site redirect / new tab).
+async function safeGetActivePage(fallbackPage) {
+  const session = getCurrentSession();
+  let pg = session?.activePage || fallbackPage;
+
+  if (!pg || pg.isClosed()) {
+    log.warning('Active page was closed. Attempting recovery from browser pages...');
+    const browser = session?.activeBrowser;
+    if (browser && browser.isConnected()) {
+      const pages = await browser.pages();
+      const openPage = pages.find(p => !p.isClosed());
+      if (openPage) {
+        pg = openPage;
+        if (session) session.activePage = pg;
+        log.info('Recovered to open browser page.');
+      } else {
+        throw new Error('All browser pages are closed — cannot continue.');
+      }
+    } else {
+      throw new Error('Browser disconnected — cannot continue.');
+    }
+  }
+
+  await pg.bringToFront().catch(e => {
+    // bringToFront can still race; if the page closes in the meantime, re-throw
+    if (e.message.includes('Target closed') || e.message.includes('Session closed')) {
+      throw e;
+    }
+    // Otherwise (e.g. window manager quirk) just continue
+  });
+
+  return pg;
+}
+
 // ============= FIXED THEORY FEEDBACK - STOPS IMMEDIATELY ON DUPLICATE =============
 async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOption) {
   const session = getCurrentSession();
-  page = session.activePage || page;
+  page = await safeGetActivePage(page);
   if (session) session.activePage = page;
-  await page.bringToFront();
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher name provided`);
@@ -1552,9 +1582,8 @@ async function submitTheoryFeedback(page, subjectCode, teacherName, feedbackOpti
 // ============= FIXED LAB FEEDBACK =============
 async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption) {
   const session = getCurrentSession();
-  page = session.activePage || page;
+  page = await safeGetActivePage(page);
   if (session) session.activePage = page;
-  await page.bringToFront();
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
@@ -1670,9 +1699,8 @@ async function submitLabFeedback(page, subjectCode, teacherName, feedbackOption)
 // ============= FIXED MENTOR FEEDBACK =============
 async function submitMentorFeedback(page, dept, name, feedbackOption) {
   const session = getCurrentSession();
-  page = session.activePage || page;
+  page = await safeGetActivePage(page);
   if (session) session.activePage = page;
-  await page.bringToFront();
   throwIfRunAborted();
   if (!dept || !name) {
     log.skip('Skipping Mentor - Missing data');
@@ -1771,9 +1799,8 @@ async function submitMentorFeedback(page, dept, name, feedbackOption) {
 // ============= FIXED TEACHING FEEDBACK =============
 async function submitTeachingFeedback(page, subjectCode, teacherName, feedbackOption) {
   const session = getCurrentSession();
-  page = session.activePage || page;
+  page = await safeGetActivePage(page);
   if (session) session.activePage = page;
-  await page.bringToFront();
   throwIfRunAborted();
   if (!teacherName || teacherName.trim() === '') {
     log.skip(`Skipping ${subjectCode} - No teacher provided`);
