@@ -2662,7 +2662,7 @@ app.post("/api/request-preset", async (req, res) => {
 
 app.post("/api/extract-preset", async (req, res) => {
   const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
-  const { attendanceImage, timetableImages, geminiApiKey } = req.body;
+  const { attendanceImage, timetableImages, aiProvider, apiKey, geminiApiKey } = req.body;
 
   await sessionContext.run(ip, async () => {
     log.section("📸 SCREENSHOT PRESET EXTRACTION REQUEST");
@@ -2678,11 +2678,12 @@ app.post("/api/extract-preset", async (req, res) => {
     }
 
     try {
-      log.info(`Analyzing 1 attendance image + ${timetableImages.length} timetable image(s)...`);
+      log.info(`Analyzing 1 attendance image + ${timetableImages.length} timetable image(s) [Provider: ${aiProvider || 'default'}]...`);
       const result = await processScreenshotExtraction({
         attendanceImage,
         timetableImages,
-        geminiApiKey: geminiApiKey || process.env.GEMINI_API_KEY
+        aiProvider: aiProvider || "gemini",
+        apiKey: apiKey || geminiApiKey || process.env.GEMINI_API_KEY
       });
       log.success("Preset matrix extraction completed successfully.");
       return res.json(result);

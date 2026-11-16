@@ -16,18 +16,29 @@ export default function ScanPage() {
   const router = useRouter();
 
   // Upload States
-  const [attendanceFile, setAttendanceFile] = useState<{ name: string; base64: string } | null>(null);
-  const [timetableFiles, setTimetableFiles] = useState<Array<{ name: string; base64: string }>>([]);
-  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [attendanceFile, setAttendanceFile] = useState<{ name: string; size: string; base64: string } | null>(null);
+  const [timetableFiles, setTimetableFiles] = useState<Array<{ name: string; size: string; base64: string }>>([]);
+  
+  // AI Provider & Key State
+  const [aiProvider, setAiProvider] = useState<"gemini" | "openai" | "groq" | "anthropic" | "local">("gemini");
+  const [apiKey, setApiKey] = useState("");
 
   // Process States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [analysisDone, setAnalysisDone] = useState(false);
 
-  // Extracted Matrix Data
+  // Lightbox / Image Preview Modal
+  const [previewModal, setPreviewModal] = useState<{ open: boolean; src: string; caption: string }>({
+    open: false,
+    src: "",
+    caption: ""
+  });
+
+  // Extracted Matrix Data (All three sections use the exact same MatrixItem structure)
   const [theoryItems, setTheoryItems] = useState<MatrixItem[]>([]);
   const [labItems, setLabItems] = useState<MatrixItem[]>([]);
+  const [learningItems, setLearningItems] = useState<MatrixItem[]>([]);
   const [mentorDept, setMentorDept] = useState("Computer Science");
   const [mentorName, setMentorName] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -40,13 +51,19 @@ export default function ScanPage() {
   const validateFile = (file: File): string | null => {
     const validMimes = ["image/jpeg", "image/png", "image/webp"];
     if (!validMimes.includes(file.type)) {
-      return `Invalid file type "${file.name}". Only JPEG, PNG, and WebP images are permitted.`;
+      return `Invalid file type "${file.name}". Only genuine JPEG, PNG, and WebP images are permitted.`;
     }
     const MAX_SIZE = 15 * 1024 * 1024; // 15MB
     if (file.size > MAX_SIZE) {
       return `File "${file.name}" exceeds the maximum safety limit of 15MB.`;
     }
     return null;
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
   const toBase64 = (file: File): Promise<string> => {
@@ -58,10 +75,12 @@ export default function ScanPage() {
     });
   };
 
-  // Handle Attendance Upload
+  // Handle Attendance Upload (Disallows more than 1 image until deleted)
   const handleAttendanceChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setErrorMessage(null);
     if (!e.target.files || e.target.files.length === 0) return;
+    if (attendanceFile) return; // Prevent uploading if already uploaded
+
     const file = e.target.files[0];
     const validationError = validateFile(file);
     if (validationError) {
@@ -70,24 +89,27 @@ export default function ScanPage() {
     }
     try {
       const base64 = await toBase64(file);
-      setAttendanceFile({ name: file.name, base64 });
-    } catch (err) {
+      setAttendanceFile({ name: file.name, size: formatFileSize(file.size), base64 });
+    } catch (_) {
       setErrorMessage("Failed to read image file.");
     }
+    // Reset file input value so re-uploading same filename works if deleted
+    if (attInputRef.current) attInputRef.current.value = "";
   };
 
-  // Handle Timetable Upload (multi-file support)
+  // Handle Timetable Upload (Strictly limits to no more than 3 images)
   const handleTimetableChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setErrorMessage(null);
     if (!e.target.files) return;
-    const files = Array.from(e.target.files);
-    
-    if (timetableFiles.length + files.length > 6) {
-      setErrorMessage("You can upload a maximum of 6 timetable screenshots.");
+    const remainingSlots = 3 - timetableFiles.length;
+    if (remainingSlots <= 0) {
+      setErrorMessage("Maximum 3 timetable screenshots allowed. Please delete one to add another.");
       return;
     }
 
-    const newFiles: Array<{ name: string; base64: string }> = [];
+    const files = Array.from(e.target.files).slice(0, remainingSlots);
+    const newFiles: Array<{ name: string; size: string; base64: string }> = [];
+
     for (const f of files) {
       const validationError = validateFile(f);
       if (validationError) {
@@ -96,18 +118,36 @@ export default function ScanPage() {
       }
       try {
         const base64 = await toBase64(f);
-        newFiles.push({ name: f.name, base64 });
-      } catch (err) {
+        newFiles.push({ name: f.name, size: formatFileSize(f.size), base64 });
+      } catch (_) {
         setErrorMessage("Failed to read one or more timetable images.");
         return;
       }
     }
     setTimetableFiles(prev => [...prev, ...newFiles]);
+    if (ttInputRef.current) ttInputRef.current.value = "";
   };
 
   const removeTimetableFile = (index: number) => {
     setTimetableFiles(prev => prev.filter((_, i) => i !== index));
   };
+
+  // Modal Lightbox Preview
+  const openPreview = (src: string, caption: string) => {
+    setPreviewModal({ open: true, src, caption });
+  };
+  const closePreview = () => {
+    setPreviewModal({ open: false, src: "", caption: "" });
+  };
+
+  // Close modal on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePreview();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Trigger Analysis
   const handleAnalyze = async () => {
@@ -117,7 +157,7 @@ export default function ScanPage() {
       return;
     }
     if (timetableFiles.length === 0) {
-      setErrorMessage("Please upload at least one Time Table screenshot (showing all days).");
+      setErrorMessage("Please upload at least one Time Table screenshot (maximum 3, showing all days).");
       return;
     }
 
@@ -133,7 +173,8 @@ export default function ScanPage() {
         body: JSON.stringify({
           attendanceImage: attendanceFile.base64,
           timetableImages: timetableFiles.map(f => f.base64),
-          geminiApiKey: geminiApiKey.trim() || undefined
+          aiProvider,
+          apiKey: apiKey.trim() || undefined
         })
       });
 
@@ -146,20 +187,29 @@ export default function ScanPage() {
       // Populate Extracted Items
       const tItems: MatrixItem[] = (data.rawItems?.theory || []).map((t: any, idx: number) => ({
         id: `t-${idx}-${Date.now()}`,
-        code: t.code,
-        name: t.name,
-        teacher: t.teacher
+        code: t.code || "",
+        name: t.name || "",
+        teacher: t.teacher || ""
       }));
 
       const lItems: MatrixItem[] = (data.rawItems?.lab || []).map((l: any, idx: number) => ({
         id: `l-${idx}-${Date.now()}`,
-        code: l.code,
-        name: l.name,
-        teacher: l.teacher
+        code: l.code || "",
+        name: l.name || "",
+        teacher: l.teacher || ""
+      }));
+
+      // Learning Protocols combines Theory and Lab
+      const learnItems: MatrixItem[] = [...tItems, ...lItems].map((item, idx) => ({
+        id: `learn-${idx}-${Date.now()}`,
+        code: item.code,
+        name: item.name,
+        teacher: item.teacher
       }));
 
       setTheoryItems(tItems);
       setLabItems(lItems);
+      setLearningItems(learnItems);
       setMentorDept(data.suggestedPreset?.mentorDept || "Computer Science");
       setMentorName(data.suggestedPreset?.mentorName || "");
       setAnalysisDone(true);
@@ -175,11 +225,11 @@ export default function ScanPage() {
   const handleApplyGroupFilter = (group: "Group 1" | "Group 2") => {
     setSelectedGroup(group);
     if (group === "Group 1") {
-      // Keep Group 1 choices (e.g. Mariyam Fatima CS418, Mohd Anas Khan CS417)
       setTheoryItems(prev => prev.filter(item => !item.teacher.toLowerCase().includes("bushra fatima")));
+      setLearningItems(prev => prev.filter(item => !item.teacher.toLowerCase().includes("bushra fatima")));
     } else {
-      // Keep Group 2 choices (e.g. Bushra Fatima CS419, Dr. Faiyaz Ahamad CS415)
       setTheoryItems(prev => prev.filter(item => !item.teacher.toLowerCase().includes("mariyam fatima")));
+      setLearningItems(prev => prev.filter(item => !item.teacher.toLowerCase().includes("mariyam fatima")));
     }
   };
 
@@ -205,28 +255,32 @@ export default function ScanPage() {
     setLabItems(prev => [...prev, { id: `l-custom-${Date.now()}`, code: "", name: "", teacher: "" }]);
   };
 
+  // Learning Item Handlers
+  const handleLearningChange = (id: string, field: "code" | "name" | "teacher", value: string) => {
+    setLearningItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+  };
+  const removeLearningRow = (id: string) => {
+    setLearningItems(prev => prev.filter(item => item.id !== id));
+  };
+  const addLearningRow = () => {
+    setLearningItems(prev => [...prev, { id: `learn-custom-${Date.now()}`, code: "", name: "", teacher: "" }]);
+  };
+
   // Finalize & Load Preset (Stored in User's Current Session Storage Only)
   const handleFinalize = () => {
     setErrorMessage(null);
 
-    // Validate entries
+    // Filter out rows where teacher is empty! (User directive: "for subject whose teachers dosent exist leave that blank and tell user this wont be transfered to operation page unless u enter teacher name")
     const validTheories = theoryItems.filter(t => t.code.trim() && t.teacher.trim());
     const validLabs = labItems.filter(l => l.code.trim() && l.teacher.trim());
+    const validLearnings = learningItems.filter(le => le.code.trim() && le.teacher.trim());
 
     if (validTheories.length === 0) {
-      setErrorMessage("Theory Matrix cannot be empty. Please include at least one valid Theory code and instructor.");
+      setErrorMessage("Theory Matrix has no valid instructor names. Please enter teacher names for at least one Theory subject.");
       return;
     }
     if (validLabs.length === 0) {
-      setErrorMessage("Lab Modules cannot be empty. Please include at least one valid Lab code and engineer.");
-      return;
-    }
-    if (!mentorDept.trim()) {
-      setErrorMessage("Please enter the Mentor Department.");
-      return;
-    }
-    if (!mentorName.trim()) {
-      setErrorMessage("Please enter the Mentor Name.");
+      setErrorMessage("Lab Modules has no valid engineer names. Please enter teacher names for at least one Lab subject.");
       return;
     }
 
@@ -236,8 +290,13 @@ export default function ScanPage() {
     const labCodes = validLabs.map(l => l.code.trim().toUpperCase()).join(",");
     const labTeachers = validLabs.map(l => l.teacher.trim()).join(",");
 
-    const teachingCodes = [theoryCodes, labCodes].filter(Boolean).join(",");
-    const teachingTeachers = [theoryTeachers, labTeachers].filter(Boolean).join(",");
+    // If learning rows were manually edited, use validLearnings, else combine validTheories + validLabs
+    const teachingCodes = validLearnings.length > 0 
+      ? validLearnings.map(e => e.code.trim().toUpperCase()).join(",")
+      : [theoryCodes, labCodes].filter(Boolean).join(",");
+    const teachingTeachers = validLearnings.length > 0
+      ? validLearnings.map(e => e.teacher.trim()).join(",")
+      : [theoryTeachers, labTeachers].filter(Boolean).join(",");
 
     const presetPayload = {
       name: "Scanned: Image Analysis",
@@ -245,8 +304,8 @@ export default function ScanPage() {
       theoryTeachers,
       labCodes,
       labTeachers,
-      mentorDept: mentorDept.trim(),
-      mentorName: mentorName.trim(),
+      mentorDept: mentorDept.trim() || "Computer Science",
+      mentorName: mentorName.trim(), // Optional now!
       teachingCodes,
       teachingTeachers,
       feedbackOption: "Always",
@@ -254,7 +313,7 @@ export default function ScanPage() {
     };
 
     try {
-      // Store STRICTLY in the current user's session storage only as requested
+      // Store STRICTLY in the current user's session storage only
       sessionStorage.setItem("feedback_bot_scanned_preset", JSON.stringify(presetPayload));
       router.push("/op?preset=scanned");
     } catch (e: any) {
@@ -264,6 +323,19 @@ export default function ScanPage() {
 
   return (
     <div className={styles.scanContainer}>
+      {/* Lightbox / Image Preview Modal */}
+      {previewModal.open && (
+        <div className={styles.modalOverlay} onClick={closePreview}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <button type="button" className={styles.modalCloseBtn} onClick={closePreview} title="Close Preview">
+              ✕
+            </button>
+            <img src={previewModal.src} alt="Screenshot Preview" className={styles.modalImage} />
+            <div className={styles.modalCaption}>{previewModal.caption}</div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className={styles.header}>
         <Link href="/op" className={styles.backLink}>
@@ -271,7 +343,7 @@ export default function ScanPage() {
         </Link>
         <h1 className={styles.title}>TIME TABLE &amp; ATTENDANCE SCANNER</h1>
         <p className={styles.subtitle}>
-          Upload college portal screenshots to extract subject codes, separate theory and lab teachers, and load a ready-to-run preset into your current session.
+          Upload college portal screenshots to extract subject codes, separate theory and lab teachers, and load a verified preset directly into your current session.
         </p>
       </header>
 
@@ -282,13 +354,13 @@ export default function ScanPage() {
         </div>
         <ul className={styles.guidelinesList}>
           <li>
-            <strong>Attendance Page Screenshot:</strong> Must clearly capture the <em>Subject column</em>, <em>Subject Codes</em> (e.g., <code>CG401</code>, <code>CS410</code>), and <em>Type</em> indicators (<code>( T )</code> / Theory, <code>( P )</code> / Practical).
+            <strong>Attendance Page Screenshot:</strong> Single photo containing the <em>Subject column</em>, <em>Subject Codes</em> (e.g. <code>CG401</code>, <code>CS410</code>), and <em>Type</em> indicators (<code>( T )</code> / Theory, <code>( P )</code> / Practical).
           </li>
           <li>
-            <strong>Time Table Screenshot(s):</strong> Must display <strong>all days</strong> (Monday through Saturday/Sunday) and all 8 periods. You can upload multiple screenshots if the timetable spans across views.
+            <strong>Time Table Screenshot(s):</strong> Maximum <strong>3 screenshots</strong> covering all days (Monday through Saturday) and all periods.
           </li>
           <li>
-            <strong>Supported Formats:</strong> JPEG, PNG, or WebP. All uploads are re-encoded and sanitized via Sharp to prevent security vulnerabilities.
+            <strong>Supported Formats:</strong> JPEG, PNG, or WebP. Re-encoded and sanitized via Sharp to prevent security vulnerabilities.
           </li>
         </ul>
       </div>
@@ -307,41 +379,57 @@ export default function ScanPage() {
             <span className={styles.cardTitle}>
               📄 Attendance Screenshot
             </span>
-            <span className={styles.badge}>Single Image</span>
+            <span className={styles.badge}>{attendanceFile ? "1 of 1 Uploaded" : "Single Image Required"}</span>
           </div>
-          <div
-            className={`${styles.dropzone} ${attendanceFile ? styles.dropzoneActive : ""}`}
-            onClick={() => attInputRef.current?.click()}
-          >
-            <input
-              type="file"
-              ref={attInputRef}
-              accept="image/png,image/jpeg,image/webp"
-              className={styles.fileInput}
-              onChange={handleAttendanceChange}
-            />
-            <span className={styles.dropIcon}>📋</span>
-            <span className={styles.dropText}>
-              {attendanceFile ? attendanceFile.name : "Click or drop Attendance screenshot"}
-            </span>
-            <span className={styles.dropSubtext}>Shows Subject Codes &amp; (T)/(P) types</span>
-          </div>
-          {attendanceFile && (
-            <div className={styles.gallery}>
-              <div className={styles.thumbWrapper}>
-                <img src={attendanceFile.base64} alt="Attendance" className={styles.thumbImg} />
-                <button
-                  type="button"
-                  className={styles.removeThumb}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAttendanceFile(null);
-                  }}
-                  title="Remove image"
-                >
-                  ✕
-                </button>
+
+          {attendanceFile ? (
+            /* Uploaded State: Disallows another image until deleted + provides preview */
+            <div className={styles.uploadedStateBox}>
+              <img
+                src={attendanceFile.base64}
+                alt="Attendance Preview"
+                className={styles.uploadedImageThumb}
+                onClick={() => openPreview(attendanceFile.base64, attendanceFile.name)}
+                title="Click to zoom preview"
+              />
+              <div className={styles.uploadedMeta}>
+                <span className={styles.uploadedFileName}>{attendanceFile.name}</span>
+                <span className={styles.uploadedNotice}>{attendanceFile.size} • 1 of 1 loaded</span>
+                <div className={styles.actionButtonRow}>
+                  <button
+                    type="button"
+                    className={styles.previewBtn}
+                    onClick={() => openPreview(attendanceFile.base64, attendanceFile.name)}
+                  >
+                    🔍 Preview
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.deleteBtn}
+                    onClick={() => setAttendanceFile(null)}
+                    title="Delete and upload different screenshot"
+                  >
+                    🗑️ Delete
+                  </button>
+                </div>
               </div>
+            </div>
+          ) : (
+            /* Dropzone: Only shown when no image is uploaded */
+            <div
+              className={styles.dropzone}
+              onClick={() => attInputRef.current?.click()}
+            >
+              <input
+                type="file"
+                ref={attInputRef}
+                accept="image/png,image/jpeg,image/webp"
+                className={styles.fileInput}
+                onChange={handleAttendanceChange}
+              />
+              <span className={styles.dropIcon}>📋</span>
+              <span className={styles.dropText}>Click or drop Attendance screenshot</span>
+              <span className={styles.dropSubtext}>Shows Subject Codes &amp; (T)/(P) types (1 image only)</span>
             </div>
           )}
         </div>
@@ -352,31 +440,48 @@ export default function ScanPage() {
             <span className={styles.cardTitle}>
               📅 Time Table Screenshot(s)
             </span>
-            <span className={styles.badge}>{timetableFiles.length} of 6 Uploaded</span>
+            <span className={styles.badge}>{timetableFiles.length} of 3 Uploaded</span>
           </div>
+
           <div
-            className={`${styles.dropzone} ${timetableFiles.length > 0 ? styles.dropzoneActive : ""}`}
-            onClick={() => ttInputRef.current?.click()}
+            className={`${styles.dropzone} ${timetableFiles.length >= 3 ? styles.dropzoneDisabled : ""}`}
+            onClick={() => {
+              if (timetableFiles.length < 3) ttInputRef.current?.click();
+            }}
           >
             <input
               type="file"
               ref={ttInputRef}
               multiple
+              disabled={timetableFiles.length >= 3}
               accept="image/png,image/jpeg,image/webp"
               className={styles.fileInput}
               onChange={handleTimetableChange}
             />
             <span className={styles.dropIcon}>🗓️</span>
             <span className={styles.dropText}>
-              Click or drop Time Table screenshot(s)
+              {timetableFiles.length >= 3 
+                ? "Maximum 3 screenshots reached" 
+                : "Click or drop Time Table screenshot(s)"}
             </span>
-            <span className={styles.dropSubtext}>Ensure all days (Mon-Sat) are covered</span>
+            <span className={styles.dropSubtext}>
+              {timetableFiles.length >= 3 
+                ? "Delete an image below to upload another" 
+                : "Ensure all days (Mon-Sat) are covered (up to 3 images)"}
+            </span>
           </div>
+
           {timetableFiles.length > 0 && (
             <div className={styles.gallery}>
               {timetableFiles.map((file, idx) => (
-                <div key={idx} className={styles.thumbWrapper}>
+                <div
+                  key={idx}
+                  className={styles.thumbWrapper}
+                  onClick={() => openPreview(file.base64, `Timetable Segment ${idx + 1}: ${file.name}`)}
+                  title="Click to preview full image"
+                >
                   <img src={file.base64} alt={`Timetable ${idx + 1}`} className={styles.thumbImg} />
+                  <span className={styles.clickPreviewBadge}>🔍 Zoom</span>
                   <button
                     type="button"
                     className={styles.removeThumb}
@@ -384,7 +489,7 @@ export default function ScanPage() {
                       e.stopPropagation();
                       removeTimetableFile(idx);
                     }}
-                    title="Remove image"
+                    title="Delete image"
                   >
                     ✕
                   </button>
@@ -395,21 +500,45 @@ export default function ScanPage() {
         </div>
       </div>
 
-      {/* Optional Gemini Vision API key option */}
+      {/* AI Vision Engine Selection & Multiple API Keys */}
       <div className={styles.apiKeyCard}>
-        <div>
-          <div className={styles.apiKeyLabel}>⚡ Vision Engine Preference</div>
-          <span style={{ fontSize: "0.75rem", color: "#666" }}>
-            Leave blank to use built-in offline OCR, or provide a Gemini API key for multimodal reasoning.
+        <div className={styles.apiKeyHeader}>
+          <div className={styles.apiKeyLabel}>
+            <span>⚡ AI Vision Engine &amp; API Key</span>
+          </div>
+          <span className={styles.apiKeySubtext}>
+            Choose your preferred AI vision model or use the built-in offline OCR engine.
           </span>
         </div>
-        <input
-          type="password"
-          className={styles.apiKeyInput}
-          placeholder="Optional: Gemini API Key (AIza...)"
-          value={geminiApiKey}
-          onChange={(e) => setGeminiApiKey(e.target.value)}
-        />
+
+        <div className={styles.providerRow}>
+          <select
+            className={styles.providerSelect}
+            value={aiProvider}
+            onChange={(e) => setAiProvider(e.target.value as any)}
+          >
+            <option value="gemini">Google Gemini (Flash)</option>
+            <option value="openai">OpenAI (GPT-4o)</option>
+            <option value="groq">Groq (Llama-3.2 Vision)</option>
+            <option value="anthropic">Anthropic (Claude 3.5)</option>
+            <option value="local">Offline Local OCR (No Key Needed)</option>
+          </select>
+
+          <input
+            type="password"
+            className={styles.apiKeyInput}
+            disabled={aiProvider === "local"}
+            placeholder={
+              aiProvider === "gemini" ? "Optional: Gemini API Key (AIza...)" :
+              aiProvider === "openai" ? "Optional: OpenAI API Key (sk-...)" :
+              aiProvider === "groq" ? "Optional: Groq API Key (gsk_...)" :
+              aiProvider === "anthropic" ? "Optional: Anthropic API Key (sk-ant-...)" :
+              "Built-in offline Sharp + Tesseract engine active"
+            }
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+          />
+        </div>
       </div>
 
       {/* Scan Button */}
@@ -490,8 +619,8 @@ export default function ScanPage() {
                 <thead>
                   <tr>
                     <th style={{ width: "20%" }}>Subject Code</th>
-                    <th style={{ width: "40%" }}>Subject Name</th>
-                    <th style={{ width: "35%" }}>Instructor Name</th>
+                    <th style={{ width: "35%" }}>Subject Name</th>
+                    <th style={{ width: "40%" }}>Instructor Name</th>
                     <th style={{ width: "5%" }}></th>
                   </tr>
                 </thead>
@@ -519,11 +648,16 @@ export default function ScanPage() {
                       <td>
                         <input
                           type="text"
-                          className={styles.tableInput}
+                          className={`${styles.tableInput} ${!item.teacher.trim() ? styles.missingTeacherInput : ""}`}
                           value={item.teacher}
-                          placeholder="Teacher Name"
+                          placeholder="Enter teacher name..."
                           onChange={(e) => handleTheoryChange(item.id, "teacher", e.target.value)}
                         />
+                        {!item.teacher.trim() && (
+                          <div className={styles.missingTeacherNotice}>
+                            ⚠️ Missing Teacher — Won't be transferred to operation page unless entered.
+                          </div>
+                        )}
                       </td>
                       <td>
                         <button
@@ -558,8 +692,8 @@ export default function ScanPage() {
                 <thead>
                   <tr>
                     <th style={{ width: "20%" }}>Lab Code</th>
-                    <th style={{ width: "40%" }}>Subject Name</th>
-                    <th style={{ width: "35%" }}>Lab Engineer Name</th>
+                    <th style={{ width: "35%" }}>Subject Name</th>
+                    <th style={{ width: "40%" }}>Lab Engineer Name</th>
                     <th style={{ width: "5%" }}></th>
                   </tr>
                 </thead>
@@ -587,11 +721,16 @@ export default function ScanPage() {
                       <td>
                         <input
                           type="text"
-                          className={styles.tableInput}
+                          className={`${styles.tableInput} ${!item.teacher.trim() ? styles.missingTeacherInput : ""}`}
                           value={item.teacher}
-                          placeholder="Engineer Name"
+                          placeholder="Enter engineer name..."
                           onChange={(e) => handleLabChange(item.id, "teacher", e.target.value)}
                         />
+                        {!item.teacher.trim() && (
+                          <div className={styles.missingTeacherNotice}>
+                            ⚠️ Missing Teacher — Won't be transferred to operation page unless entered.
+                          </div>
+                        )}
                       </td>
                       <td>
                         <button
@@ -610,14 +749,14 @@ export default function ScanPage() {
             </div>
           </div>
 
-          {/* Section 06 - Mentor Directive */}
+          {/* Section 06 - Mentor Directive (Removed required text) */}
           <div className={styles.tableCard}>
             <div className={styles.tableTitle}>
               <span>Section 06 - Mentor Directive</span>
             </div>
             <div className={styles.mentorGrid}>
               <div className={styles.mentorGroup}>
-                <label className={styles.mentorLabel}>Department</label>
+                <label className={styles.mentorLabel}>DEPARTMENT</label>
                 <input
                   type="text"
                   className={styles.tableInput}
@@ -627,7 +766,7 @@ export default function ScanPage() {
                 />
               </div>
               <div className={styles.mentorGroup}>
-                <label className={styles.mentorLabel}>Mentor Name (Required)</label>
+                <label className={styles.mentorLabel}>MENTOR NAME</label>
                 <input
                   type="text"
                   className={styles.tableInput}
@@ -639,14 +778,73 @@ export default function ScanPage() {
             </div>
           </div>
 
-          {/* Section 07 - Learning Protocols Combined Preview */}
+          {/* Section 07 - Learning Protocols (Exact same editable table as Section 04 and 05) */}
           <div className={styles.tableCard}>
             <div className={styles.tableTitle}>
               <span>Section 07 - Learning Protocols (Combined Theory + Labs)</span>
+              <button type="button" className={styles.addRowBtn} onClick={addLearningRow}>
+                + Add Learning Row
+              </button>
             </div>
-            <div className={styles.protocolsPreview}>
-              <div><strong>CODES:</strong> {theoryItems.map(t => t.code).concat(labItems.map(l => l.code)).filter(Boolean).join(",") || "None"}</div>
-              <div style={{ marginTop: "0.4rem" }}><strong>INSTRUCTORS:</strong> {theoryItems.map(t => t.teacher).concat(labItems.map(l => l.teacher)).filter(Boolean).join(",") || "None"}</div>
+            <div className={styles.tableWrap}>
+              <table className={styles.dataTable}>
+                <thead>
+                  <tr>
+                    <th style={{ width: "20%" }}>Subject Code</th>
+                    <th style={{ width: "35%" }}>Subject Name</th>
+                    <th style={{ width: "40%" }}>Instructor Name</th>
+                    <th style={{ width: "5%" }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {learningItems.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <input
+                          type="text"
+                          className={styles.tableInput}
+                          value={item.code}
+                          placeholder="e.g. CS410"
+                          onChange={(e) => handleLearningChange(item.id, "code", e.target.value)}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className={styles.tableInput}
+                          value={item.name}
+                          placeholder="Subject Title"
+                          onChange={(e) => handleLearningChange(item.id, "name", e.target.value)}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className={`${styles.tableInput} ${!item.teacher.trim() ? styles.missingTeacherInput : ""}`}
+                          value={item.teacher}
+                          placeholder="Instructor Name"
+                          onChange={(e) => handleLearningChange(item.id, "teacher", e.target.value)}
+                        />
+                        {!item.teacher.trim() && (
+                          <div className={styles.missingTeacherNotice}>
+                            ⚠️ Missing Teacher — Won't be transferred to operation page unless entered.
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className={styles.rowActionBtn}
+                          onClick={() => removeLearningRow(item.id)}
+                          title="Delete row"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -668,4 +866,3 @@ export default function ScanPage() {
     </div>
   );
 }
-
