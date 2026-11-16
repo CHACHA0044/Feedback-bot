@@ -7,18 +7,19 @@ import readline from "readline";
 import cors from "cors";
 import { AsyncLocalStorage } from "async_hooks";
 import nodemailer from "nodemailer";
+import { processScreenshotExtraction } from "./extract-service.js";
 
 const app = express();
 const sessionContext = new AsyncLocalStorage();
 const FRONTEND_URL = (process.env.FRONTEND_URL || '').replace(/\/$/, "");
 
 app.use(cors({
-  origin: [FRONTEND_URL, FRONTEND_URL + "/", 'https://feedback-bot-delta.vercel.app'],
+  origin: [FRONTEND_URL, FRONTEND_URL + "/", 'https://feedback-bot-delta.vercel.app', 'http://localhost:3000'],
   methods: ['GET', 'POST'],
   credentials: true
 }));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 const PORT = process.env.PORT || 7860;
 let activeRun = null;
 
@@ -2655,6 +2656,40 @@ app.post("/api/request-preset", async (req, res) => {
       console.log("[MAIL] Skipping transmission: MAIL_USER or MAIL_PASS not configured.");
       log.warning("MAIL_USER or MAIL_PASS missing.");
       res.status(500).send({ status: "error", message: "Mail server not configured." });
+    }
+  });
+});
+
+app.post("/api/extract-preset", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const { attendanceImage, timetableImages, geminiApiKey } = req.body;
+
+  await sessionContext.run(ip, async () => {
+    log.section("📸 SCREENSHOT PRESET EXTRACTION REQUEST");
+    log.info(`Client session: ${ip}`);
+
+    if (!attendanceImage) {
+      log.error("Missing attendance screenshot.");
+      return res.status(400).json({ status: "error", message: "Attendance screenshot is required." });
+    }
+    if (!timetableImages || !Array.isArray(timetableImages) || timetableImages.length === 0) {
+      log.error("Missing timetable screenshot(s).");
+      return res.status(400).json({ status: "error", message: "At least one timetable screenshot is required." });
+    }
+
+    try {
+      log.info(`Analyzing 1 attendance image + ${timetableImages.length} timetable image(s)...`);
+      const result = await processScreenshotExtraction({
+        attendanceImage,
+        timetableImages,
+        geminiApiKey: geminiApiKey || process.env.GEMINI_API_KEY
+      });
+      log.success("Preset matrix extraction completed successfully.");
+      return res.json(result);
+    } catch (err) {
+      console.error("[EXTRACT-PRESET] Extraction error:", err.message);
+      log.error(`Extraction failed: ${err.message}`);
+      return res.status(400).json({ status: "error", message: err.message });
     }
   });
 });

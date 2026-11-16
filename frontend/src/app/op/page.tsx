@@ -212,6 +212,43 @@ export default function OpPage() {
       }
     } catch (_) { }
   }, []);
+
+  // Scanned Preset loader from current Session Storage only
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const scannedJson = sessionStorage.getItem('feedback_bot_scanned_preset');
+        const urlParams = new URLSearchParams(window.location.search);
+        const isRedirectedFromScan = urlParams.get('preset') === 'scanned';
+
+        if (scannedJson && isRedirectedFromScan) {
+          const scannedData = JSON.parse(scannedJson);
+          setFormData((prev: any) => ({
+            ...prev,
+            theoryCodes: scannedData.theoryCodes || '',
+            theoryTeachers: scannedData.theoryTeachers || '',
+            labCodes: scannedData.labCodes || '',
+            labTeachers: scannedData.labTeachers || '',
+            mentorDept: scannedData.mentorDept || 'Computer Science',
+            mentorName: scannedData.mentorName || '',
+            teachingCodes: scannedData.teachingCodes || '',
+            teachingTeachers: scannedData.teachingTeachers || '',
+            feedbackOption: scannedData.feedbackOption || 'Always'
+          }));
+          setSelectedPreset("Scanned: Image Analysis");
+          setIsGlobalSyncPulse(true);
+          setTimeout(() => setIsGlobalSyncPulse(false), 900);
+          showNotif("Preset matrix loaded from current session.", "success");
+          addLog("Scanned timetable & attendance matrix loaded into Session.", "success");
+
+          const cleanUrl = window.location.pathname;
+          window.history.replaceState({}, '', cleanUrl);
+        }
+      }
+    } catch (e) {
+      console.error("Error loading scanned preset from session storage:", e);
+    }
+  }, []);
   const [presetMessage, setPresetMessage] = useState('');
 
   const handleSendPresetRequest = async () => {
@@ -450,6 +487,25 @@ export default function OpPage() {
 
   const handleLoadPreset = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const presetName = e.target.value;
+    if (presetName === "Scanned: Image Analysis") {
+      try {
+        const scannedJson = sessionStorage.getItem('feedback_bot_scanned_preset');
+        if (scannedJson) {
+          const scanned = JSON.parse(scannedJson);
+          setFormData((prev: any) => ({
+            ...prev,
+            ...scanned
+          }));
+          setSelectedPreset("Scanned: Image Analysis");
+          setIsGlobalSyncPulse(true);
+          setTimeout(() => setIsGlobalSyncPulse(false), 900);
+          addLog(`Session Scanned Preset loaded into Matrix.`, "success");
+          addLog("Global synchronization pulse executed.", "action");
+          return;
+        }
+      } catch (_) {}
+    }
+
     if (presetName && PRESETS[presetName as keyof typeof PRESETS]) {
       setFormData((prev: any) => ({
         ...prev,
@@ -1234,6 +1290,19 @@ export default function OpPage() {
                       exit={{ opacity: 0, y: -10, scale: 0.95 }}
                       transition={{ duration: 0.2, ease: "easeOut" }}
                     >
+                      {typeof window !== 'undefined' && sessionStorage.getItem('feedback_bot_scanned_preset') && (
+                        <div
+                          key="scanned-preset"
+                          className={`${styles.dropdownItem} ${selectedPreset === 'Scanned: Image Analysis' ? styles.dropdownItemActive : ''}`}
+                          style={{ borderBottom: '1px solid rgba(240, 195, 60, 0.2)', color: 'var(--primary)', fontWeight: 600 }}
+                          onClick={() => {
+                            handleLoadPreset({ target: { value: 'Scanned: Image Analysis' } } as any);
+                            setOpenDropdown(null);
+                          }}
+                        >
+                          ⚡ Scanned: Image Analysis (Current Session)
+                        </div>
+                      )}
                       {Object.keys(PRESETS).map(name => (
                         <div
                           key={name}
@@ -1251,16 +1320,27 @@ export default function OpPage() {
                 </AnimatePresence>
               </div>
               <div className={styles.presetRequestWrapper}>
-                <span>Want your own preset?</span>
-                <button
-                  type="button"
-                  className={styles.mailEmojiBtn}
-                  onClick={() => setPresetModalOpen(true)}
-                  title="Request Custom Preset"
+                <div className={styles.presetActionLeft}>
+                  <span>Want your own preset?</span>
+                  <button
+                    type="button"
+                    className={styles.mailEmojiBtn}
+                    onClick={() => setPresetModalOpen(true)}
+                    title="Request Custom Preset"
+                  >
+                    <span className={styles.desktopMail}>🖂</span>
+                    <span className={styles.mobileMail}>📩</span>
+                  </button>
+                </div>
+                <div className={styles.presetActionDivider} />
+                <Link
+                  href="/op/scan"
+                  className={styles.scanPresetBtn}
+                  title="Upload Time Table and Attendance page screenshots to auto-extract preset"
                 >
-                  <span className={styles.desktopMail}>🖂</span>
-                  <span className={styles.mobileMail}>📩</span>
-                </button>
+                  <span className={styles.scanIcon}>⚡</span>
+                  <span>Upload Time Table &amp; Attendance</span>
+                </Link>
               </div>
             </motion.div>
           </div>

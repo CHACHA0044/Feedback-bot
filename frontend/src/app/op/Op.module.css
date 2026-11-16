@@ -1223,10 +1223,70 @@
   margin-top: 1rem;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
   font-size: 0.8rem;
-  color: #666;
-  padding-left: 0.5rem;
+  color: #888;
+  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(240, 195, 60, 0.15);
+  border-radius: 8px;
+}
+
+.presetActionLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.presetActionDivider {
+  width: 1px;
+  height: 20px;
+  background: rgba(240, 195, 60, 0.2);
+}
+
+@media (max-width: 600px) {
+  .presetActionDivider {
+    display: none;
+  }
+}
+
+.scanPresetBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  background: rgba(240, 195, 60, 0.08);
+  border: 1px solid rgba(240, 195, 60, 0.35);
+  border-radius: 6px;
+  color: var(--primary);
+  font-family: var(--font-robotic, monospace);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.25s ease;
+}
+
+.scanPresetBtn:hover {
+  background: rgba(240, 195, 60, 0.2);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 0 15px rgba(240, 195, 60, 0.3);
+  transform: translateY(-1px);
+}
+
+.scanIcon {
+  font-size: 1rem;
+  color: var(--primary);
+  animation: pulseScan 2s infinite ease-in-out;
+}
+
+@keyframes pulseScan {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 6px var(--primary-glow)); }
 }
 
 .mailEmojiBtn {
