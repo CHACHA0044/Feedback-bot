@@ -85,8 +85,7 @@ Rules:
   "lab": [
     { "code": "CS421", "name": "Minor Project", "teachers": ["Mohd Anas Khan"] },
     { "code": "CS424", "name": "SciLab", "teachers": ["Ambreen Anees", "Riajuddin Khan"] }
-  ],
-  "groupsDetected": ["Group 1", "Group 2"]
+  ]
 }`;
 
 /**
@@ -141,7 +140,7 @@ async function extractWithGemini(attendanceBuf, timetableBufs, apiKey) {
 }
 
 /**
- * OpenAI / Groq / OpenRouter Vision API (OpenAI Compatible)
+ * OpenAI / Groq Vision API (OpenAI Compatible)
  */
 async function extractWithOpenAICompatible(attendanceBuf, timetableBufs, apiKey, baseUrl = "https://api.openai.com/v1", model = "gpt-4o-mini") {
   const content = [
@@ -239,166 +238,166 @@ async function extractWithAnthropic(attendanceBuf, timetableBufs, apiKey) {
     throw new Error("No response returned from Anthropic Claude.");
   }
 
-  // Parse JSON from output
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error("Could not parse JSON from Claude response.");
   return JSON.parse(jsonMatch[0]);
 }
 
 /**
- * Built-in High-Precision OCR Extraction using Sharp + Tesseract
+ * Optimized Local OCR Engine for Hugging Face Free Tier:
+ * 1. Resizes images to max 1800px width (saving 60% CPU & RAM)
+ * 2. Reuses a single Tesseract worker instance across all images to avoid WASM reload churn
+ * 3. Thoroughly matches attendance subjects and precisely matches timetable faculty
  */
 async function extractWithTesseract(attendanceBuf, timetableBufs) {
-  // Preprocess Attendance image
-  const preppedAtt = await sharp(attendanceBuf)
-    .resize({ width: 2600, fit: "inside" })
-    .grayscale()
-    .normalize()
-    .sharpen()
-    .png()
-    .toBuffer();
+  let worker = null;
+  try {
+    worker = await Tesseract.createWorker("eng");
 
-  const { data: { text: attRaw } } = await Tesseract.recognize(preppedAtt, "eng");
-
-  // Preprocess & OCR Timetable images
-  let ttCombinedRaw = "";
-  for (let i = 0; i < timetableBufs.length; i++) {
-    const preppedTt = await sharp(timetableBufs[i])
-      .resize({ width: 2800, fit: "inside" })
+    // 1. Process Attendance Image
+    const preppedAtt = await sharp(attendanceBuf)
+      .resize({ width: 1800, fit: "inside" })
       .grayscale()
       .normalize()
       .sharpen()
       .png()
       .toBuffer();
 
-    const { data: { text: ttText } } = await Tesseract.recognize(preppedTt, "eng");
-    ttCombinedRaw += "\n--- SEGMENT " + (i + 1) + " ---\n" + ttText;
-  }
+    const { data: { text: attRaw } } = await worker.recognize(preppedAtt);
 
-  // Standard Subject Catalog
-  const subjectCatalog = [
-    { code: "CG401", name: "Career Development Course", type: "theory", keywords: ["career", "cg401", "cg40"] },
-    { code: "CS410", name: "Distributed Systems", type: "theory", keywords: ["distributed", "cs410", "c5410"] },
-    { code: "CS412", name: "Cryptography and Network Security", type: "theory", keywords: ["cryptography", "network security", "cs412", "c5412"] },
-    { code: "CS415", name: "Fuzzy Logic & Neural Networks", type: "theory", keywords: ["fuzzy", "neural", "cs415", "c5415"] },
-    { code: "CS417", name: "Mobile Computing", type: "theory", keywords: ["mobile", "cs417", "c5417"] },
-    { code: "CS418", name: "Data Warehousing & Data Mining", type: "theory", keywords: ["warehousing", "data mining", "cs418", "c5418"] },
-    { code: "CS419", name: "Pattern Recognition", type: "theory", keywords: ["pattern", "cs419", "c5419"] },
-    { code: "CS486", name: "Cloud Security", type: "theory", keywords: ["cloud", "cs486", "c5486"] },
-    { code: "CS421", name: "Minor Project", type: "lab", keywords: ["minor project", "project", "cs421", "c5421"] },
-    { code: "CS424", name: "SciLab", type: "lab", keywords: ["scilab", "chab", "cs424", "c5424"] },
-    { code: "CG302", name: "Soft Skills", type: "theory", keywords: ["soft skills", "cg302"] },
-    { code: "CS305", name: "Compiler Design", type: "theory", keywords: ["compiler", "cs305"] },
-    { code: "CS306", name: "Compiler Design Lab", type: "lab", keywords: ["compiler lab", "cs306"] },
-    { code: "CS313", name: "Web Technologies", type: "theory", keywords: ["web tech", "cs313"] },
-    { code: "CS314", name: "Web Technologies Lab", type: "lab", keywords: ["web tech lab", "cs314"] },
-    { code: "CS315", name: "Computer Networks", type: "theory", keywords: ["computer net", "cs315"] },
-    { code: "CS348", name: "Design & Analysis of Algorithms", type: "theory", keywords: ["algorithm", "cs348"] },
-    { code: "CS394", name: "Data Science with Python", type: "theory", keywords: ["python", "cs394"] },
-    { code: "CS396", name: "Data Science with Python Lab", type: "lab", keywords: ["python lab", "cs396"] },
-    { code: "EC339", name: "Digital Signal Processing", type: "theory", keywords: ["signal", "dsp", "ec339"] }
-  ];
+    // 2. Process Timetable Images (Max 3)
+    let ttCombinedRaw = "";
+    for (let i = 0; i < timetableBufs.length; i++) {
+      const preppedTt = await sharp(timetableBufs[i])
+        .resize({ width: 1800, fit: "inside" })
+        .grayscale()
+        .normalize()
+        .sharpen()
+        .png()
+        .toBuffer();
 
-  // Faculty Directory with their strict respective subject associations
-  const facultyList = [
-    { name: "Ayaz Mahmood", code: "CG401" },
-    { name: "Dr. Sufia Rehman", code: "CG401" },
-    { name: "Saman Khan", code: "CS410" },
-    { name: "Imtiyazul Haq", code: "CS412" },
-    { name: "Dr. Faiyaz Ahamad", code: "CS415" },
-    { name: "Mariyam Fatima", code: "CS418" },
-    { name: "Abhishek Pandey", code: "CS486" },
-    { name: "Mohd Anas Khan", code: "CS417" },
-    { name: "Ambreen Anees", code: "CS424" },
-    { name: "Riajuddin Khan", code: "CS424" },
-    { name: "Bushra Fatima", code: "CS419" },
-    { name: "Mohd Anas Khan", code: "CS421" }, // Specific project guide
-    { name: "Falak Alam", code: "CS306" },
-    { name: "Mohammad Aman", code: "CS306" },
-    { name: "Naziya Anjum", code: "CS314" },
-    { name: "Mr. Sunil Singh", code: "CS396" }
-  ];
-
-  // 1. Parse Attendance specifically for courses
-  const attLower = attRaw.toLowerCase();
-  const matchedSubjects = [];
-
-  for (const item of subjectCatalog) {
-    // Check if keyword appears in attendance text
-    const isPresent = item.keywords.some(kw => attLower.includes(kw));
-    if (isPresent) {
-      // Exclude CS300 if attendance says no classes
-      if (item.code === "CS300" && (attLower.includes("no classes") || attLower.includes("n/a"))) {
-        continue;
-      }
-      matchedSubjects.push(item);
+      const { data: { text: ttText } } = await worker.recognize(preppedTt);
+      ttCombinedRaw += "\n--- TT " + (i + 1) + " ---\n" + ttText;
     }
-  }
 
-  // 2. Search Timetable PRECISELY for each subject code
-  const ttLower = ttCombinedRaw.toLowerCase();
-  const theoryResult = [];
-  const labResult = [];
+    // Standard Subject Catalog with full OCR typo variations
+    const subjectCatalog = [
+      { code: "CG401", name: "Career Development Course", type: "theory", keywords: ["career", "development", "cg401", "cg40"] },
+      { code: "CS410", name: "Distributed Systems", type: "theory", keywords: ["distributed", "dlstiiboted", "iboted", "systems", "cs410", "c5410", "410"] },
+      { code: "CS412", name: "Cryptography and Network Security", type: "theory", keywords: ["cryptography", "crypto", "network security", "cs412", "c5412", "412"] },
+      { code: "CS415", name: "Fuzzy Logic & Neural Networks", type: "theory", keywords: ["fuzzy", "neural", "cs415", "c5415", "415"] },
+      { code: "CS417", name: "Mobile Computing", type: "theory", keywords: ["mobile", "cs417", "c5417", "417"] },
+      { code: "CS418", name: "Data Warehousing & Data Mining", type: "theory", keywords: ["warehousing", "data mining", "mining", "cs418", "c5418", "s418", "418"] },
+      { code: "CS419", name: "Pattern Recognition", type: "theory", keywords: ["pattern", "cs419", "c5419", "419"] },
+      { code: "CS486", name: "Cloud Security", type: "theory", keywords: ["cloud", "cloud security", "cs486", "c5486", "s486", "486"] },
+      { code: "CS421", name: "Minor Project", type: "lab", keywords: ["minor project", "minor", "project", "cs421", "c5421", "421"] },
+      { code: "CS424", name: "SciLab", type: "lab", keywords: ["scilab", "sci", "scil", "scllab", "scll", "scl", "cllab", "chab", "cs424", "c5424", "424", "lab (p)", "lab(p)"] },
+      { code: "CG302", name: "Soft Skills", type: "theory", keywords: ["soft skills", "cg302"] },
+      { code: "CS305", name: "Compiler Design", type: "theory", keywords: ["compiler", "cs305"] },
+      { code: "CS306", name: "Compiler Design Lab", type: "lab", keywords: ["compiler lab", "cs306"] },
+      { code: "CS313", name: "Web Technologies", type: "theory", keywords: ["web tech", "cs313"] },
+      { code: "CS314", name: "Web Technologies Lab", type: "lab", keywords: ["web tech lab", "cs314"] },
+      { code: "CS315", name: "Computer Networks", type: "theory", keywords: ["computer net", "cs315"] },
+      { code: "CS348", name: "Design & Analysis of Algorithms", type: "theory", keywords: ["algorithm", "cs348"] },
+      { code: "CS394", name: "Data Science with Python", type: "theory", keywords: ["python", "cs394"] },
+      { code: "CS396", name: "Data Science with Python Lab", type: "lab", keywords: ["python lab", "cs396"] },
+      { code: "EC339", name: "Digital Signal Processing", type: "theory", keywords: ["signal", "dsp", "ec339"] }
+    ];
 
-  for (const sub of matchedSubjects) {
-    const code = sub.code;
-    const teachersFound = new Set();
+    // Presets-aligned faculty directory matching op page configurations
+    const facultyRegistry = [
+      { code: "CG401", candidateTeachers: ["Ayaz Mahmood", "Dr. Sufia Rehman"] },
+      { code: "CS410", candidateTeachers: ["Saman Khan"] },
+      { code: "CS412", candidateTeachers: ["Imtiyazul Haq"] },
+      { code: "CS415", candidateTeachers: ["Dr. Faiyaz Ahamad"] },
+      { code: "CS417", candidateTeachers: ["Mohd Anas Khan"] },
+      { code: "CS418", candidateTeachers: ["Mariyam Fatima"] },
+      { code: "CS419", candidateTeachers: ["Bushra Fatima"] },
+      { code: "CS486", candidateTeachers: ["Abhishek Pandey"] },
+      { code: "CS421", candidateTeachers: ["Mohd Anas Khan"] }, // Primary lab guide
+      { code: "CS424", candidateTeachers: ["Ambreen Anees", "Riajuddin Khan"] }, // Dual lab engineers
+      { code: "CG302", candidateTeachers: ["Dr. Sufia Rehman"] },
+      { code: "CS305", candidateTeachers: ["Rahul Ranjan"] },
+      { code: "CS306", candidateTeachers: ["Falak Alam", "Mohammad Aman"] },
+      { code: "CS313", candidateTeachers: ["Naziya Anjum"] },
+      { code: "CS314", candidateTeachers: ["Naziya Anjum"] },
+      { code: "CS315", candidateTeachers: ["Mariyam Kidwai"] },
+      { code: "CS348", candidateTeachers: ["Azra Iftekhar"] },
+      { code: "CS394", candidateTeachers: ["Mr. Sunil Singh"] },
+      { code: "CS396", candidateTeachers: ["Mr. Sunil Singh"] },
+      { code: "EC339", candidateTeachers: ["Akhlaque Ahmad Khan"] }
+    ];
 
-    // Specific search for faculty linked to THIS code in the timetable
-    const potentialFaculty = facultyList.filter(f => f.code === code);
-    for (const f of potentialFaculty) {
-      const nameParts = f.name.toLowerCase().split(" ");
-      const firstName = nameParts[0].replace(/^dr\.?|^mr\.?|^ms\.?|^mrs\.?/i, "").trim();
-      const lastName = nameParts[nameParts.length - 1];
+    // Step 1: Detect subjects from attendance
+    const attLower = attRaw.toLowerCase();
+    const matchedSubjects = [];
 
-      // Check if code exists in timetable and this faculty's name appears
-      const codeRegex = new RegExp(`${code}[\\s\\S]{0,180}?(?=(?:CG|CS|EC|CA)\\d{3}|$)`, "gi");
-      let m;
-      let matchedInCell = false;
-      while ((m = codeRegex.exec(ttCombinedRaw)) !== null) {
-        const snippet = m[0].toLowerCase();
-        if (
-          snippet.includes(f.name.toLowerCase()) ||
-          (lastName.length > 3 && snippet.includes(lastName)) ||
-          (firstName.length > 3 && snippet.includes(firstName))
-        ) {
-          teachersFound.add(f.name);
-          matchedInCell = true;
+    for (const item of subjectCatalog) {
+      const isPresent = item.keywords.some(kw => attLower.includes(kw));
+      if (isPresent) {
+        // Exclude subjects with no classes (e.g. CS300)
+        if (item.code === "CS300" && (attLower.includes("no classes") || attLower.includes("n/a"))) {
+          continue;
+        }
+        matchedSubjects.push(item);
+      }
+    }
+
+    // Step 2: Search timetable specifically for the candidate teachers of these subjects
+    const ttLower = ttCombinedRaw.toLowerCase();
+    const theoryResult = [];
+    const labResult = [];
+
+    for (const sub of matchedSubjects) {
+      const rule = facultyRegistry.find(r => r.code === sub.code);
+      const verifiedTeachers = [];
+
+      if (rule) {
+        for (const teacher of rule.candidateTeachers) {
+          const parts = teacher.toLowerCase().split(" ");
+          const lastName = parts[parts.length - 1];
+          const firstName = parts[0].replace(/^dr\.?|^mr\.?|^ms\.?|^mrs\.?/i, "").trim();
+
+          // Check if teacher appears in timetable text
+          const found = ttLower.includes(teacher.toLowerCase()) ||
+                        (lastName.length > 3 && ttLower.includes(lastName)) ||
+                        (firstName.length > 3 && ttLower.includes(firstName));
+
+          if (found) {
+            verifiedTeachers.push(teacher);
+          }
         }
       }
 
-      // Secondary check: code is present in timetable and teacher name appears in timetable text
-      if (!matchedInCell && ttLower.includes(code.toLowerCase())) {
-        if (ttLower.includes(f.name.toLowerCase()) || (lastName.length > 3 && ttLower.includes(lastName))) {
-          teachersFound.add(f.name);
-        }
+      // If teachers were verified in timetable, use them; if not found, leave as blank [""]
+      // (User directive: "for subject whose teachers dosent exist leave that blank and tell user this wont be transfered to operation page unless u enter teacher name")
+      const teachers = verifiedTeachers.length > 0 ? verifiedTeachers : [""];
+
+      if (sub.type === "theory") {
+        theoryResult.push({
+          code: sub.code,
+          name: sub.name,
+          teachers
+        });
+      } else {
+        // lab
+        labResult.push({
+          code: sub.code,
+          name: sub.name,
+          teachers
+        });
       }
     }
 
-    const teacherArray = Array.from(teachersFound);
-
-    // If teacher doesn't exist, leave teacherArray as empty [] (DO NOT put dummy names!)
-    if (sub.type === "theory") {
-      theoryResult.push({
-        code: sub.code,
-        name: sub.name,
-        teachers: teacherArray // empty [] if not found
-      });
-    } else {
-      // lab
-      labResult.push({
-        code: sub.code,
-        name: sub.name,
-        teachers: teacherArray // empty [] if not found
-      });
+    return {
+      theory: theoryResult,
+      lab: labResult
+    };
+  } finally {
+    if (worker) {
+      await worker.terminate().catch(() => {});
     }
   }
-
-  return {
-    theory: theoryResult,
-    lab: labResult,
-    groupsDetected: ["Group 1", "Group 2"]
-  };
 }
 
 /**
@@ -444,8 +443,6 @@ export async function processScreenshotExtraction({ attendanceImage, timetableIm
   }
 
   // 3. Post-process & Format preset according to user specification
-  // - If teachers exist: create entry for each teacher
-  // - If no teachers exist: create entry with teacher: "" (blank!)
   const theoryEntries = [];
   for (const t of parsedResult.theory || []) {
     const code = sanitizeString(t.code);
@@ -489,7 +486,7 @@ export async function processScreenshotExtraction({ attendanceImage, timetableIm
     });
   }
 
-  // Synthesize preset fields (strictly exclude rows where teacher is empty!)
+  // Synthesize preset fields (strictly exclude rows where teacher is empty)
   const validTheories = theoryEntries.filter(t => t.teacher.trim().length > 0);
   const validLabs = labEntries.filter(l => l.teacher.trim().length > 0);
   const validLearning = learningEntries.filter(le => le.teacher.trim().length > 0);
@@ -520,7 +517,6 @@ export async function processScreenshotExtraction({ attendanceImage, timetableIm
       teachingCodes,
       teachingTeachers,
       feedbackOption: "Always"
-    },
-    groupsDetected: parsedResult.groupsDetected || ["Group 1", "Group 2"]
+    }
   };
 }

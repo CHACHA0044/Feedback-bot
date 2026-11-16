@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import styles from "./Scan.module.css";
 
 interface MatrixItem {
@@ -12,16 +13,25 @@ interface MatrixItem {
   teacher: string;
 }
 
+const AI_PROVIDERS = [
+  { value: "gemini", label: "Google Gemini (Flash)", placeholder: "Optional: Gemini API Key (AIza...)" },
+  { value: "openai", label: "OpenAI (GPT-4o)", placeholder: "Optional: OpenAI API Key (sk-...)" },
+  { value: "groq", label: "Groq (Llama-3.2 Vision)", placeholder: "Optional: Groq API Key (gsk_...)" },
+  { value: "anthropic", label: "Anthropic (Claude 3.5)", placeholder: "Optional: Anthropic API Key (sk-ant-...)" },
+  { value: "local", label: "Offline Local OCR (No Key Needed)", placeholder: "Built-in offline Sharp + Tesseract active (Optimized for Free Tier)" }
+];
+
 export default function ScanPage() {
   const router = useRouter();
 
   // Upload States
   const [attendanceFile, setAttendanceFile] = useState<{ name: string; size: string; base64: string } | null>(null);
   const [timetableFiles, setTimetableFiles] = useState<Array<{ name: string; size: string; base64: string }>>([]);
-  
-  // AI Provider & Key State
-  const [aiProvider, setAiProvider] = useState<"gemini" | "openai" | "groq" | "anthropic" | "local">("gemini");
+
+  // AI Provider & Key State (Custom Dropdown)
+  const [aiProvider, setAiProvider] = useState<string>("gemini");
   const [apiKey, setApiKey] = useState("");
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   // Process States
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -41,7 +51,6 @@ export default function ScanPage() {
   const [learningItems, setLearningItems] = useState<MatrixItem[]>([]);
   const [mentorDept, setMentorDept] = useState("Computer Science");
   const [mentorName, setMentorName] = useState("");
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
   // File Input Refs
   const attInputRef = useRef<HTMLInputElement>(null);
@@ -79,7 +88,7 @@ export default function ScanPage() {
   const handleAttendanceChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setErrorMessage(null);
     if (!e.target.files || e.target.files.length === 0) return;
-    if (attendanceFile) return; // Prevent uploading if already uploaded
+    if (attendanceFile) return;
 
     const file = e.target.files[0];
     const validationError = validateFile(file);
@@ -93,7 +102,6 @@ export default function ScanPage() {
     } catch (_) {
       setErrorMessage("Failed to read image file.");
     }
-    // Reset file input value so re-uploading same filename works if deleted
     if (attInputRef.current) attInputRef.current.value = "";
   };
 
@@ -199,12 +207,12 @@ export default function ScanPage() {
         teacher: l.teacher || ""
       }));
 
-      // Learning Protocols combines Theory and Lab
-      const learnItems: MatrixItem[] = [...tItems, ...lItems].map((item, idx) => ({
+      // Learning Protocols initially derived from Theory + Lab
+      const learnItems: MatrixItem[] = (data.rawItems?.learning || [...tItems, ...lItems]).map((item: any, idx: number) => ({
         id: `learn-${idx}-${Date.now()}`,
-        code: item.code,
-        name: item.name,
-        teacher: item.teacher
+        code: item.code || "",
+        name: item.name || "",
+        teacher: item.teacher || ""
       }));
 
       setTheoryItems(tItems);
@@ -218,18 +226,6 @@ export default function ScanPage() {
       setErrorMessage(err.message || "Matrix extraction failed. Please check image clarity and try again.");
     } finally {
       setIsAnalyzing(false);
-    }
-  };
-
-  // Group quick filter (e.g. Group 1 vs Group 2)
-  const handleApplyGroupFilter = (group: "Group 1" | "Group 2") => {
-    setSelectedGroup(group);
-    if (group === "Group 1") {
-      setTheoryItems(prev => prev.filter(item => !item.teacher.toLowerCase().includes("bushra fatima")));
-      setLearningItems(prev => prev.filter(item => !item.teacher.toLowerCase().includes("bushra fatima")));
-    } else {
-      setTheoryItems(prev => prev.filter(item => !item.teacher.toLowerCase().includes("mariyam fatima")));
-      setLearningItems(prev => prev.filter(item => !item.teacher.toLowerCase().includes("mariyam fatima")));
     }
   };
 
@@ -290,7 +286,6 @@ export default function ScanPage() {
     const labCodes = validLabs.map(l => l.code.trim().toUpperCase()).join(",");
     const labTeachers = validLabs.map(l => l.teacher.trim()).join(",");
 
-    // If learning rows were manually edited, use validLearnings, else combine validTheories + validLabs
     const teachingCodes = validLearnings.length > 0 
       ? validLearnings.map(e => e.code.trim().toUpperCase()).join(",")
       : [theoryCodes, labCodes].filter(Boolean).join(",");
@@ -305,7 +300,7 @@ export default function ScanPage() {
       labCodes,
       labTeachers,
       mentorDept: mentorDept.trim() || "Computer Science",
-      mentorName: mentorName.trim(), // Optional now!
+      mentorName: mentorName.trim(), // Optional!
       teachingCodes,
       teachingTeachers,
       feedbackOption: "Always",
@@ -320,6 +315,8 @@ export default function ScanPage() {
       setErrorMessage("Could not save preset to session storage: " + e.message);
     }
   };
+
+  const currentProviderObj = AI_PROVIDERS.find(p => p.value === aiProvider) || AI_PROVIDERS[0];
 
   return (
     <div className={styles.scanContainer}>
@@ -371,7 +368,7 @@ export default function ScanPage() {
         </div>
       )}
 
-      {/* Upload Dropzones */}
+      {/* Upload Cards Grid */}
       <div className={styles.uploadGrid}>
         {/* Attendance Card */}
         <div className={styles.uploadCard}>
@@ -434,7 +431,7 @@ export default function ScanPage() {
           )}
         </div>
 
-        {/* Timetable Card */}
+        {/* Timetable Card - Matches clean style of Attendance */}
         <div className={styles.uploadCard}>
           <div className={styles.cardHeader}>
             <span className={styles.cardTitle}>
@@ -443,64 +440,73 @@ export default function ScanPage() {
             <span className={styles.badge}>{timetableFiles.length} of 3 Uploaded</span>
           </div>
 
-          <div
-            className={`${styles.dropzone} ${timetableFiles.length >= 3 ? styles.dropzoneDisabled : ""}`}
-            onClick={() => {
-              if (timetableFiles.length < 3) ttInputRef.current?.click();
-            }}
-          >
-            <input
-              type="file"
-              ref={ttInputRef}
-              multiple
-              disabled={timetableFiles.length >= 3}
-              accept="image/png,image/jpeg,image/webp"
-              className={styles.fileInput}
-              onChange={handleTimetableChange}
-            />
-            <span className={styles.dropIcon}>🗓️</span>
-            <span className={styles.dropText}>
-              {timetableFiles.length >= 3 
-                ? "Maximum 3 screenshots reached" 
-                : "Click or drop Time Table screenshot(s)"}
-            </span>
-            <span className={styles.dropSubtext}>
-              {timetableFiles.length >= 3 
-                ? "Delete an image below to upload another" 
-                : "Ensure all days (Mon-Sat) are covered (up to 3 images)"}
-            </span>
-          </div>
-
-          {timetableFiles.length > 0 && (
-            <div className={styles.gallery}>
-              {timetableFiles.map((file, idx) => (
-                <div
-                  key={idx}
-                  className={styles.thumbWrapper}
-                  onClick={() => openPreview(file.base64, `Timetable Segment ${idx + 1}: ${file.name}`)}
-                  title="Click to preview full image"
-                >
-                  <img src={file.base64} alt={`Timetable ${idx + 1}`} className={styles.thumbImg} />
-                  <span className={styles.clickPreviewBadge}>🔍 Zoom</span>
+          {/* Clean list of uploaded timetable screenshots */}
+          {timetableFiles.map((file, idx) => (
+            <div key={idx} className={styles.uploadedStateBox}>
+              <img
+                src={file.base64}
+                alt={`Timetable Segment ${idx + 1}`}
+                className={styles.uploadedImageThumb}
+                onClick={() => openPreview(file.base64, `Timetable Segment ${idx + 1}: ${file.name}`)}
+                title="Click to zoom preview"
+              />
+              <div className={styles.uploadedMeta}>
+                <span className={styles.uploadedFileName}>{file.name}</span>
+                <span className={styles.uploadedNotice}>{file.size} • Segment {idx + 1} of 3</span>
+                <div className={styles.actionButtonRow}>
                   <button
                     type="button"
-                    className={styles.removeThumb}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeTimetableFile(idx);
-                    }}
-                    title="Delete image"
+                    className={styles.previewBtn}
+                    onClick={() => openPreview(file.base64, `Timetable Segment ${idx + 1}: ${file.name}`)}
                   >
-                    ✕
+                    🔍 Preview
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.deleteBtn}
+                    onClick={() => removeTimetableFile(idx)}
+                    title="Delete this screenshot"
+                  >
+                    🗑️ Delete
                   </button>
                 </div>
-              ))}
+              </div>
+            </div>
+          ))}
+
+          {/* Upload trigger button if fewer than 3 screenshots uploaded */}
+          {timetableFiles.length < 3 ? (
+            <div
+              className={timetableFiles.length === 0 ? styles.dropzone : styles.addMoreBtn}
+              onClick={() => ttInputRef.current?.click()}
+            >
+              <input
+                type="file"
+                ref={ttInputRef}
+                multiple
+                accept="image/png,image/jpeg,image/webp"
+                className={styles.fileInput}
+                onChange={handleTimetableChange}
+              />
+              {timetableFiles.length === 0 ? (
+                <>
+                  <span className={styles.dropIcon}>🗓️</span>
+                  <span className={styles.dropText}>Click or drop Time Table screenshot(s)</span>
+                  <span className={styles.dropSubtext}>Ensure all days (Mon-Sat) are covered (up to 3 images)</span>
+                </>
+              ) : (
+                <span>➕ Add Another Time Table Screenshot ({timetableFiles.length} of 3)</span>
+              )}
+            </div>
+          ) : (
+            <div className={styles.allLoadedNotice}>
+              ✓ Maximum 3 of 3 timetable screenshots loaded
             </div>
           )}
         </div>
       </div>
 
-      {/* AI Vision Engine Selection & Multiple API Keys */}
+      {/* AI Vision Engine Selection & Multiple API Keys (Custom Animated Dropdown like Op page) */}
       <div className={styles.apiKeyCard}>
         <div className={styles.apiKeyHeader}>
           <div className={styles.apiKeyLabel}>
@@ -512,29 +518,46 @@ export default function ScanPage() {
         </div>
 
         <div className={styles.providerRow}>
-          <select
-            className={styles.providerSelect}
-            value={aiProvider}
-            onChange={(e) => setAiProvider(e.target.value as any)}
-          >
-            <option value="gemini">Google Gemini (Flash)</option>
-            <option value="openai">OpenAI (GPT-4o)</option>
-            <option value="groq">Groq (Llama-3.2 Vision)</option>
-            <option value="anthropic">Anthropic (Claude 3.5)</option>
-            <option value="local">Offline Local OCR (No Key Needed)</option>
-          </select>
+          {/* Custom Animated Dropdown matching Op page */}
+          <div className={styles.customDropdown}>
+            <div
+              className={`${styles.dropdownTrigger} ${openDropdown === 'provider' ? styles.open : ''}`}
+              onClick={() => setOpenDropdown(openDropdown === 'provider' ? null : 'provider')}
+            >
+              <span>{currentProviderObj.label}</span>
+              <span className={`${styles.dropdownArrow} ${openDropdown === 'provider' ? styles.open : ''}`}>▼</span>
+            </div>
+            <AnimatePresence>
+              {openDropdown === 'provider' && (
+                <motion.div
+                  className={styles.dropdownMenu}
+                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                >
+                  {AI_PROVIDERS.map(p => (
+                    <div
+                      key={p.value}
+                      className={`${styles.dropdownItem} ${aiProvider === p.value ? styles.dropdownItemActive : ''}`}
+                      onClick={() => {
+                        setAiProvider(p.value);
+                        setOpenDropdown(null);
+                      }}
+                    >
+                      {p.label}
+                    </div>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           <input
             type="password"
             className={styles.apiKeyInput}
             disabled={aiProvider === "local"}
-            placeholder={
-              aiProvider === "gemini" ? "Optional: Gemini API Key (AIza...)" :
-              aiProvider === "openai" ? "Optional: OpenAI API Key (sk-...)" :
-              aiProvider === "groq" ? "Optional: Groq API Key (gsk_...)" :
-              aiProvider === "anthropic" ? "Optional: Anthropic API Key (sk-ant-...)" :
-              "Built-in offline Sharp + Tesseract engine active"
-            }
+            placeholder={currentProviderObj.placeholder}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
           />
@@ -568,42 +591,6 @@ export default function ScanPage() {
           <div className={styles.reviewTitle}>
             <span>VERIFICATION MATRIX</span>
             <span className={styles.reviewSubtitle}>Review, adjust instructors, and finalize preset</span>
-          </div>
-
-          {/* Group / Elective Conflict Chooser */}
-          <div className={styles.conflictCard}>
-            <div className={styles.conflictHeader}>
-              👥 Batch / Group Filter &amp; Conflict Resolver
-            </div>
-            <p style={{ fontSize: "0.8rem", color: "#bbb", marginBottom: "0.75rem" }}>
-              If your class divides into groups (e.g. Group 1 vs Group 2), choose your group to automatically prune opposing teachers, or edit names below.
-            </p>
-            <div className={styles.conflictButtonGroup}>
-              <button
-                type="button"
-                className={`${styles.groupChoiceBtn} ${selectedGroup === "Group 1" ? styles.groupChoiceBtnActive : ""}`}
-                onClick={() => handleApplyGroupFilter("Group 1")}
-              >
-                Filter: Group 1
-              </button>
-              <button
-                type="button"
-                className={`${styles.groupChoiceBtn} ${selectedGroup === "Group 2" ? styles.groupChoiceBtnActive : ""}`}
-                onClick={() => handleApplyGroupFilter("Group 2")}
-              >
-                Filter: Group 2
-              </button>
-              {selectedGroup && (
-                <button
-                  type="button"
-                  className={styles.groupChoiceBtn}
-                  onClick={() => setSelectedGroup(null)}
-                  style={{ borderColor: "#666" }}
-                >
-                  Reset Filter
-                </button>
-              )}
-            </div>
           </div>
 
           {/* Section 04 - Theory Matrix */}
