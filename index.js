@@ -2864,6 +2864,420 @@ app.post("/api/portal-logout", async (req, res) => {
   }
 });
 
+// ============= ILI ZONE (MOODLE LMS) AUTOMATION PIPELINE =============
+const iliSessions = new Map();
+
+function getOrCreateIliSession(ip) {
+  if (!iliSessions.has(ip)) {
+    iliSessions.set(ip, {
+      id: ip,
+      activeBrowser: null,
+      activePage: null,
+      status: "IDLE",
+      sseClients: [],
+      courses: [],
+      lastScreenshot: null,
+      lastActivity: Date.now()
+    });
+    console.log(`[ILI SESSION] Initialized for IP: ${ip}`);
+  }
+  const session = iliSessions.get(ip);
+  session.lastActivity = Date.now();
+  return session;
+}
+
+function broadcastIli(ip, data) {
+  const session = iliSessions.get(ip);
+  if (!session || !session.sseClients) return;
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
+  session.sseClients.forEach(client => {
+    try {
+      client.write(payload);
+    } catch (_) {}
+  });
+}
+
+async function captureIliScreenshot(session, ip) {
+  if (!session.activePage || session.activePage.isClosed()) return null;
+  try {
+    const screenshot = await session.activePage.screenshot({
+      type: "jpeg",
+      quality: 60,
+      encoding: "base64"
+    });
+    const dataUri = `data:image/jpeg;base64,${screenshot}`;
+    session.lastScreenshot = dataUri;
+    broadcastIli(ip, { type: "screenshot", screenshot: dataUri });
+    return dataUri;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ILI SSE Stream
+app.get("/api/ili/stream", (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  const session = getOrCreateIliSession(ip);
+  session.sseClients.push(res);
+
+  // Send current state immediately
+  res.write(`data: ${JSON.stringify({ type: "status", status: session.status })}\n\n`);
+  if (session.courses.length > 0) {
+    res.write(`data: ${JSON.stringify({ type: "courses", courses: session.courses })}\n\n`);
+  }
+  if (session.lastScreenshot) {
+    res.write(`data: ${JSON.stringify({ type: "screenshot", screenshot: session.lastScreenshot })}\n\n`);
+  }
+
+  req.on("close", () => {
+    session.sseClients = session.sseClients.filter(c => c !== res);
+  });
+});
+
+// ILI: Start Auth & Click Google SSO
+app.post("/api/ili/start-auth", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const session = getOrCreateIliSession(ip);
+
+  try {
+    if (session.activeBrowser && session.activeBrowser.isConnected()) {
+      await session.activeBrowser.close().catch(() => {});
+    }
+
+    session.status = "LAUNCHING_BROWSER";
+    broadcastIli(ip, { type: "status", status: session.status });
+    broadcastIli(ip, { type: "log", message: "Launching browser for ILI Zone authentication...", logType: "action" });
+
+    // Use headful on local; on headless/cloud use virtual viewport
+    const browser = await puppeteer.launch({
+      headless: IS_LOCAL ? false : "new",
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-web-security',
+        '--disable-dev-shm-usage',
+        '--window-size=1280,800'
+      ],
+      defaultViewport: { width: 1280, height: 800 }
+    });
+
+    const page = await browser.newPage();
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    });
+
+    session.activeBrowser = browser;
+    session.activePage = page;
+
+    broadcastIli(ip, { type: "log", message: "Navigating to https://ilizone.in/login/index.php...", logType: "info" });
+    await page.goto("https://ilizone.in/login/index.php", { waitUntil: "networkidle2", timeout: 30000 });
+    await captureIliScreenshot(session, ip);
+
+    // Look for Google Login Identity Provider button
+    broadcastIli(ip, { type: "log", message: "Searching for Google Identity Provider login button...", logType: "info" });
+    const googleBtnSelector = 'a.login-identityprovider-btn, a[href*="auth/oauth2/login.php?id=1"], a[href*="accounts.google.com"]';
+    await page.waitForSelector(googleBtnSelector, { visible: true, timeout: 10000 }).catch(() => null);
+
+    const btnFound = await page.$(googleBtnSelector);
+    if (!btnFound) {
+      throw new Error("Google login button not found on ilizone.in/login/index.php");
+    }
+
+    broadcastIli(ip, { type: "log", message: "Clicking Google Login button...", logType: "action" });
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: "networkidle2", timeout: 25000 }).catch(() => null),
+      btnFound.click()
+    ]);
+
+    await captureIliScreenshot(session, ip);
+
+    session.status = "AWAITING_GOOGLE_AUTH";
+    broadcastIli(ip, { type: "status", status: session.status });
+    broadcastIli(ip, {
+      type: "log",
+      message: "Google OAuth sign-in page opened. Please select your institutional account in the browser or interactive mirror.",
+      logType: "warning"
+    });
+
+    // Start background poller to detect transition to ilizone.in/my/
+    const pollInterval = setInterval(async () => {
+      try {
+        if (!session.activePage || session.activePage.isClosed()) {
+          clearInterval(pollInterval);
+          return;
+        }
+
+        const currentUrl = session.activePage.url();
+        await captureIliScreenshot(session, ip);
+
+        if (currentUrl.includes("ilizone.in/my") || (currentUrl.includes("ilizone.in") && !currentUrl.includes("login") && !currentUrl.includes("auth"))) {
+          clearInterval(pollInterval);
+          session.status = "DASHBOARD_SYNCED";
+          broadcastIli(ip, { type: "status", status: session.status });
+          broadcastIli(ip, {
+            type: "log",
+            message: "Authentication successful! ILI Dashboard reached (https://ilizone.in/my/).",
+            logType: "success"
+          });
+        }
+      } catch (_) {
+        clearInterval(pollInterval);
+      }
+    }, 2000);
+
+    res.send({ status: "success", message: "Google auth initiated.", currentUrl: page.url() });
+  } catch (err) {
+    console.error("[ILI_AUTH_ERROR]", err);
+    session.status = "ERROR";
+    broadcastIli(ip, { type: "status", status: "ERROR" });
+    broadcastIli(ip, { type: "log", message: `Error during Google Auth: ${err.message}`, logType: "error" });
+    res.status(500).send({ status: "error", message: err.message });
+  }
+});
+
+// ILI: Navigate to My Courses (my/courses.php) and parse enrolled courses
+app.post("/api/ili/navigate-courses", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const session = iliSessions.get(ip);
+
+  if (!session || !session.activePage || session.activePage.isClosed()) {
+    return res.status(400).send({ status: "error", message: "No active ILI browser session. Please login first." });
+  }
+
+  try {
+    const page = session.activePage;
+    broadcastIli(ip, { type: "log", message: "Navigating to https://ilizone.in/my/courses.php...", logType: "action" });
+
+    // Navigate or click "My courses" nav link
+    const myCoursesNav = await page.$('a.nav-link[href*="my/courses.php"]');
+    if (myCoursesNav) {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 25000 }).catch(() => null),
+        myCoursesNav.click()
+      ]);
+    } else {
+      await page.goto("https://ilizone.in/my/courses.php", { waitUntil: "networkidle2", timeout: 25000 });
+    }
+
+    await page.waitForSelector('div.card.dashboard-card, [data-region="course-content"], .coursename', { timeout: 10000 }).catch(() => null);
+    await captureIliScreenshot(session, ip);
+
+    // Scrape courses
+    const courses = await page.evaluate(() => {
+      const cards = Array.from(document.querySelectorAll('div.card.dashboard-card, [data-region="course-content"], .course-info-container'));
+      const parsed = [];
+
+      cards.forEach(card => {
+        const link = card.querySelector('a.coursename') || card.querySelector('a[href*="/course/view.php"]') || card.querySelector('a');
+        const courseId = card.getAttribute('data-course-id') || (link?.href?.match(/id=(\d+)/)?.[1]) || "";
+        const titleEl = card.querySelector('.coursename') || card.querySelector('.multiline') || link;
+        const title = titleEl ? titleEl.innerText.trim() : "";
+        const progressEl = card.querySelector('.progress-bar, [data-region="progress-bar"]');
+        const progress = progressEl ? (progressEl.getAttribute('aria-valuenow') || progressEl.innerText.trim()) : "";
+
+        if (title && (courseId || link?.href)) {
+          parsed.push({
+            id: courseId,
+            title,
+            url: link?.href || `https://ilizone.in/course/view.php?id=${courseId}`,
+            progress: progress ? `${progress}%` : undefined
+          });
+        }
+      });
+
+      return parsed;
+    });
+
+    session.courses = courses;
+    session.status = "COURSES_DISCOVERED";
+    broadcastIli(ip, { type: "status", status: "COURSES_DISCOVERED" });
+    broadcastIli(ip, { type: "courses", courses });
+    broadcastIli(ip, {
+      type: "log",
+      message: `Enrolled Courses Discovered: ${courses.length} subject(s) identified on my/courses.php.`,
+      logType: "success"
+    });
+
+    res.send({ status: "success", courses });
+  } catch (err) {
+    console.error("[ILI_COURSES_ERROR]", err);
+    broadcastIli(ip, { type: "log", message: `Failed to load courses: ${err.message}`, logType: "error" });
+    res.status(500).send({ status: "error", message: err.message });
+  }
+});
+
+// ILI: Get Enrolled Courses
+app.get("/api/ili/get-courses", (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const session = iliSessions.get(ip);
+  res.send({ status: "success", courses: session?.courses || [] });
+});
+
+// ILI: Open on-demand Course
+app.post("/api/ili/open-course", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const session = iliSessions.get(ip);
+  const { courseId, courseUrl } = req.body;
+
+  if (!session || !session.activePage || session.activePage.isClosed()) {
+    return res.status(400).send({ status: "error", message: "No active ILI browser session." });
+  }
+
+  const targetUrl = courseUrl || `https://ilizone.in/course/view.php?id=${courseId}`;
+
+  try {
+    const page = session.activePage;
+    broadcastIli(ip, { type: "log", message: `Opening target course: ${targetUrl}...`, logType: "action" });
+
+    await page.goto(targetUrl, { waitUntil: "networkidle2", timeout: 25000 });
+    await captureIliScreenshot(session, ip);
+
+    const title = await page.title();
+    session.status = "IN_COURSE";
+    broadcastIli(ip, { type: "status", status: "IN_COURSE" });
+    broadcastIli(ip, { type: "log", message: `Opened course page: "${title}"`, logType: "success" });
+
+    res.send({ status: "success", title, url: targetUrl });
+  } catch (err) {
+    console.error("[ILI_OPEN_COURSE_ERROR]", err);
+    broadcastIli(ip, { type: "log", message: `Error opening course: ${err.message}`, logType: "error" });
+    res.status(500).send({ status: "error", message: err.message });
+  }
+});
+
+// ILI: Deep JavaScript & DOM Inspection
+app.post("/api/ili/inspect-js", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const session = iliSessions.get(ip);
+
+  if (!session || !session.activePage || session.activePage.isClosed()) {
+    return res.status(400).send({ status: "error", message: "No active ILI browser session to inspect." });
+  }
+
+  try {
+    const page = session.activePage;
+    broadcastIli(ip, { type: "log", message: "Executing deep JavaScript & DOM schema extraction...", logType: "action" });
+
+    const inspection = await page.evaluate(() => {
+      const scripts = Array.from(document.querySelectorAll('script')).map(s => ({
+        src: s.src || null,
+        inlineSnippet: s.src ? null : s.innerText.slice(0, 200)
+      }));
+
+      const forms = Array.from(document.querySelectorAll('form')).map(f => ({
+        id: f.id || null,
+        action: f.action || null,
+        method: f.method || 'GET',
+        inputs: Array.from(f.querySelectorAll('input, select, textarea')).map(inp => ({
+          name: inp.name || null,
+          type: inp.type || null,
+          value: inp.type === 'password' ? '***' : inp.value || null
+        }))
+      }));
+
+      const moodleCfg = window.M?.cfg ? {
+        wwwroot: window.M.cfg.wwwroot,
+        sesskey: window.M.cfg.sesskey,
+        theme: window.M.cfg.theme,
+        courseId: window.M.cfg.courseId || null
+      } : null;
+
+      const activities = Array.from(document.querySelectorAll('.activity, [data-region="activity-card"], .activity-item, .modtype_feedback, .modtype_questionnaire, .modtype_assign, .modtype_quiz')).map(act => {
+        const link = act.querySelector('a');
+        const title = act.querySelector('.instancename')?.innerText?.trim() || link?.innerText?.trim() || act.innerText?.slice(0, 80);
+        return {
+          type: act.className,
+          title,
+          href: link?.href || null
+        };
+      });
+
+      return {
+        url: window.location.href,
+        title: document.title,
+        moodleCfg,
+        formsCount: forms.length,
+        forms,
+        scriptsCount: scripts.length,
+        scripts: scripts.slice(0, 20),
+        activitiesCount: activities.length,
+        activities
+      };
+    });
+
+    broadcastIli(ip, {
+      type: "log",
+      message: `Inspection Analysis Complete: ${inspection.formsCount} form(s), ${inspection.activitiesCount} activity module(s), Sesskey: ${inspection.moodleCfg?.sesskey || 'N/A'}.`,
+      logType: "success"
+    });
+
+    res.send({ status: "success", inspection });
+  } catch (err) {
+    console.error("[ILI_INSPECT_ERROR]", err);
+    broadcastIli(ip, { type: "log", message: `Inspect error: ${err.message}`, logType: "error" });
+    res.status(500).send({ status: "error", message: err.message });
+  }
+});
+
+// ILI: Interactive Mirror Click/Key Forwarding
+app.post("/api/ili/interact", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const session = iliSessions.get(ip);
+
+  if (!session || !session.activePage || session.activePage.isClosed()) {
+    return res.status(400).send({ status: "error", message: "No active session." });
+  }
+
+  const { action, xRatio, yRatio, key } = req.body;
+  try {
+    const page = session.activePage;
+    if (action === "click" && typeof xRatio === "number" && typeof yRatio === "number") {
+      const viewport = page.viewport() || { width: 1280, height: 800 };
+      const x = Math.round(xRatio * viewport.width);
+      const y = Math.round(yRatio * viewport.height);
+      await page.mouse.click(x, y);
+      await new Promise(r => setTimeout(r, 600));
+      await captureIliScreenshot(session, ip);
+    } else if (action === "type" && key) {
+      await page.keyboard.press(key);
+      await captureIliScreenshot(session, ip);
+    }
+    res.send({ status: "success" });
+  } catch (err) {
+    res.status(500).send({ status: "error", message: err.message });
+  }
+});
+
+// ILI: Terminate Session
+app.post("/api/ili/kill", async (req, res) => {
+  const ip = req.headers['x-session-id'] || req.query.sessionId || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'local';
+  const session = iliSessions.get(ip);
+
+  if (session) {
+    try {
+      if (session.activeBrowser?.isConnected()) {
+        await session.activeBrowser.close().catch(() => {});
+      }
+    } catch (_) {}
+    session.activeBrowser = null;
+    session.activePage = null;
+    session.status = "DISCONNECTED";
+    session.courses = [];
+    session.lastScreenshot = null;
+    broadcastIli(ip, { type: "status", status: "DISCONNECTED" });
+    broadcastIli(ip, { type: "log", message: "ILI Browser session terminated by user.", logType: "warning" });
+  }
+  res.send({ status: "success", message: "Session terminated." });
+});
+
 // ============= KEEP-ALIVE PROTOCOL =============
 // Prevents server from sleeping on platforms like Hugging Face or Render
 app.get("/api/ping", (req, res) => {

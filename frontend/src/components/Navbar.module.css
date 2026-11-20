@@ -56,6 +56,27 @@
 .links {
   display: flex;
   gap: 2rem;
+  align-items: center;
+}
+
+.rightCluster {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.iliLogoDot {
+  background: #c042b4 !important;
+  box-shadow: 0 0 10px #c042b4 !important;
+}
+
+.iliLogoAlt {
+  color: #c042b4 !important;
+}
+
+.link.iliActive::after {
+  background: #c042b4 !important;
+  box-shadow: 0 0 8px #c042b4 !important;
 }
 
 .link {
