@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import styles from "./IliOp.module.css";
 
@@ -28,12 +28,15 @@ export default function IliOpPage() {
   const [isOpeningCourse, setIsOpeningCourse] = useState<string | null>(null);
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectionResult, setInspectionResult] = useState<any>(null);
+  const [inputText, setInputText] = useState("");
+  const [isMirrorFocused, setIsMirrorFocused] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
   const mirrorRef = useRef<HTMLImageElement>(null);
+  const mirrorWrapperRef = useRef<HTMLDivElement>(null);
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:7860";
 
-  const addLog = (msg: string, type: LogEntry["type"] = "info") => {
+  const addLog = useCallback((msg: string, type: LogEntry["type"] = "info") => {
     const entry: LogEntry = {
       id: `${Date.now()}-${Math.random().toString(36).substring(7)}`,
       time: new Date().toLocaleTimeString(),
@@ -41,7 +44,7 @@ export default function IliOpPage() {
       type
     };
     setLogs((prev) => [entry, ...prev.slice(0, 100)]);
-  };
+  }, []);
 
   // Connect SSE for ILI live stream
   useEffect(() => {
@@ -66,13 +69,86 @@ export default function IliOpPage() {
     };
 
     sse.onerror = () => {
-      // Stream reconnecting automatically
+      // Reconnects automatically
     };
 
     return () => {
       sse.close();
     };
-  }, [backendUrl]);
+  }, [backendUrl, addLog]);
+
+  // Special key map
+  const specialKeyMap: Record<string, string> = {
+    Enter: "Enter",
+    Backspace: "Backspace",
+    Tab: "Tab",
+    Space: "Space",
+    ArrowUp: "ArrowUp",
+    ArrowDown: "ArrowDown",
+    ArrowLeft: "ArrowLeft",
+    ArrowRight: "ArrowRight",
+    Delete: "Delete",
+    Escape: "Escape"
+  };
+
+  // Send single special key (Enter, Backspace, Tab, etc.)
+  const handleKeyPress = useCallback(async (key: string) => {
+    addLog(`Key pressed: [${key}]`, "action");
+    try {
+      await fetch(`${backendUrl}/api/ili/interact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "press", key })
+      });
+    } catch (err) {
+      console.error("Key press error:", err);
+    }
+  }, [backendUrl, addLog]);
+
+  // Send text string (whole phrase or single char)
+  const handleSendText = useCallback(async (textToSend?: string) => {
+    const text = typeof textToSend === "string" ? textToSend : inputText;
+    if (!text) return;
+
+    addLog(`Transmitting text to browser: "${text.length > 30 ? text.slice(0, 27) + '...' : text}"`, "action");
+    try {
+      await fetch(`${backendUrl}/api/ili/interact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "type", text })
+      });
+      if (!textToSend) {
+        setInputText("");
+      }
+    } catch (err) {
+      console.error("Type text error:", err);
+    }
+  }, [backendUrl, inputText, addLog]);
+
+  // Global Physical Keyboard Listener when mirror has focus
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (!isMirrorFocused) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // Check special key
+      const mapped = specialKeyMap[e.code] || specialKeyMap[e.key];
+      if (mapped) {
+        e.preventDefault();
+        void handleKeyPress(mapped);
+        return;
+      }
+
+      // Check single character
+      if (e.key.length === 1) {
+        e.preventDefault();
+        void handleSendText(e.key);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isMirrorFocused, handleKeyPress, handleSendText]);
 
   // Step 1: Start Google OAuth Auth Flow
   const handleStartAuth = async () => {
@@ -188,6 +264,9 @@ export default function IliOpPage() {
   // Interactive Click Forwarding on Browser Mirror
   const handleMirrorClick = async (e: React.MouseEvent<HTMLImageElement>) => {
     if (!mirrorRef.current) return;
+    setIsMirrorFocused(true);
+    mirrorWrapperRef.current?.focus();
+
     const rect = mirrorRef.current.getBoundingClientRect();
     const xRatio = (e.clientX - rect.left) / rect.width;
     const yRatio = (e.clientY - rect.top) / rect.height;
@@ -205,14 +284,15 @@ export default function IliOpPage() {
     }
   };
 
-  // Kill Session
+  // Kill Session / Abort
   const handleKillSession = async () => {
-    addLog("Terminating active ILI browser instance...", "warning");
+    addLog("Aborting / Terminating active ILI browser instance...", "warning");
     try {
       await fetch(`${backendUrl}/api/ili/kill`, { method: "POST" });
       setStatus("DISCONNECTED");
       setLiveScreenshot(null);
       setCourses([]);
+      setIsMirrorFocused(false);
       addLog("ILI browser session terminated cleanly.", "info");
     } catch (err: any) {
       addLog(`Kill Error: ${err.message}`, "error");
@@ -258,10 +338,30 @@ export default function IliOpPage() {
             <span className={styles.cardTitle}>
               <span>🌐</span> Live Browser View &amp; Google SSO
             </span>
-            <span style={{ fontSize: "0.7rem", color: "#aaa" }}>Interactive Viewport</span>
+            <span style={{ fontSize: "0.7rem", color: isMirrorFocused ? "#e056d3" : "#aaa" }}>
+              {isMirrorFocused ? "⌨️ KEYBOARD ACTIVE" : "Click image to focus & type"}
+            </span>
           </div>
 
-          <div className={styles.mirrorWrapper}>
+          <div
+            ref={mirrorWrapperRef}
+            className={`${styles.mirrorWrapper} ${isMirrorFocused ? styles.mirrorFocused : ""}`}
+            tabIndex={0}
+            onFocus={() => setIsMirrorFocused(true)}
+            onBlur={(e) => {
+              // Don't unfocus if focus moved to typing bar
+              if (e.relatedTarget && (e.relatedTarget as HTMLElement).closest(`.${styles.typingBar}`)) {
+                return;
+              }
+              setIsMirrorFocused(false);
+            }}
+          >
+            {isMirrorFocused && (
+              <div className={styles.keyboardFocusPill}>
+                <span>●</span> KEYBOARD ACTIVE (TYPE DIRECTLY)
+              </div>
+            )}
+
             {liveScreenshot ? (
               <img
                 ref={mirrorRef}
@@ -269,7 +369,7 @@ export default function IliOpPage() {
                 alt="ILI Live Browser View"
                 className={styles.mirrorImage}
                 onClick={handleMirrorClick}
-                title="Click anywhere to forward click event to browser"
+                title="Click field to focus, then type directly or use input bar below"
               />
             ) : (
               <div className={styles.mirrorPlaceholder}>
@@ -280,6 +380,48 @@ export default function IliOpPage() {
             )}
           </div>
 
+          {/* Direct Text Transmission Toolbar */}
+          <div className={styles.typingBar}>
+            <input
+              type="text"
+              className={styles.typingInput}
+              placeholder="Type or paste text (e.g. email or password)..."
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleSendText();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className={styles.typeBtn}
+              onClick={() => handleSendText()}
+              title="Type text into active browser element"
+            >
+              ⌨️ Send
+            </button>
+            <button
+              type="button"
+              className={styles.keyBtn}
+              onClick={() => handleKeyPress("Enter")}
+              title="Press Enter key"
+            >
+              ⏎ Enter
+            </button>
+            <button
+              type="button"
+              className={styles.keyBtn}
+              onClick={() => handleKeyPress("Backspace")}
+              title="Press Backspace key"
+            >
+              ⌫
+            </button>
+          </div>
+
+          {/* Action Buttons Row */}
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
             <button
               type="button"
@@ -297,6 +439,14 @@ export default function IliOpPage() {
               disabled={isLoadingCourses}
             >
               <span>📚 Go to My Courses</span>
+            </button>
+            <button
+              type="button"
+              className={styles.abortBtn}
+              onClick={handleKillSession}
+              title="Abort current login and close browser"
+            >
+              🛑 Abort / Reset
             </button>
           </div>
         </div>

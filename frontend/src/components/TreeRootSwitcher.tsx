@@ -192,3 +192,4 @@ export default function TreeRootSwitcher({ currentPlatform, onPlatformChange }: 
     </div>
   );
 }
+

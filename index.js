@@ -2,6 +2,7 @@ import express from "express";
 import puppeteer from "puppeteer";
 import dotenv from "dotenv";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import readline from "readline";
 import cors from "cors";
@@ -2953,9 +2954,18 @@ app.post("/api/ili/start-auth", async (req, res) => {
     broadcastIli(ip, { type: "status", status: session.status });
     broadcastIli(ip, { type: "log", message: "Launching browser for ILI Zone authentication...", logType: "action" });
 
+    // Persistent user data directory so Google accounts and cookies are retained
+    const iliUserDataDir = path.join(process.cwd(), ".cache", "ili_profile");
+    try {
+      if (!fs.existsSync(iliUserDataDir)) {
+        fs.mkdirSync(iliUserDataDir, { recursive: true });
+      }
+    } catch (_) {}
+
     // Use headful on local; on headless/cloud use virtual viewport
     const browser = await puppeteer.launch({
       headless: IS_LOCAL ? false : "new",
+      userDataDir: iliUserDataDir,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -3236,7 +3246,7 @@ app.post("/api/ili/interact", async (req, res) => {
     return res.status(400).send({ status: "error", message: "No active session." });
   }
 
-  const { action, xRatio, yRatio, key } = req.body;
+  const { action, xRatio, yRatio, key, text } = req.body;
   try {
     const page = session.activePage;
     if (action === "click" && typeof xRatio === "number" && typeof yRatio === "number") {
@@ -3246,8 +3256,17 @@ app.post("/api/ili/interact", async (req, res) => {
       await page.mouse.click(x, y);
       await new Promise(r => setTimeout(r, 600));
       await captureIliScreenshot(session, ip);
-    } else if (action === "type" && key) {
+    } else if (action === "press" && key) {
       await page.keyboard.press(key);
+      await new Promise(r => setTimeout(r, 200));
+      await captureIliScreenshot(session, ip);
+    } else if (action === "type") {
+      if (text) {
+        await page.keyboard.type(text, { delay: 25 });
+      } else if (key) {
+        await page.keyboard.press(key);
+      }
+      await new Promise(r => setTimeout(r, 200));
       await captureIliScreenshot(session, ip);
     }
     res.send({ status: "success" });
